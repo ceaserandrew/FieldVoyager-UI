@@ -10,9 +10,9 @@ import { AvatarConfig, DEFAULT_AVATAR_CONFIG } from "./utils/avatarDrawer";
 import { AvatarCustomizer } from "./components/AvatarCustomizer";
 
 export default function App() {
-  // Coordinates in the central tranquil ocean between the continents
-  const [avatarPos, setAvatarPos] = useState<Position>({ x: 395, y: 310 });
-  const [targetPos, setTargetPos] = useState<Position>({ x: 395, y: 310 });
+  // Coordinates of the start position on the scenic wooden overworld bridge
+  const [avatarPos, setAvatarPos] = useState<Position>({ x: 1600, y: 720 });
+  const [targetPos, setTargetPos] = useState<Position>({ x: 1600, y: 720 });
   const [solvedNodeIds, setSolvedNodeIds] = useState<string[]>([]);
   const [activeDialogueNode, setActiveDialogueNode] = useState<LandmarkNode | null>(null);
   

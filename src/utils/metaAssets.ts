@@ -16,31 +16,56 @@ export interface TileDef {
   y: number; // grid y
 }
 
-// 25 col x 19 row matrix for 800x600 dimensions (32x32 pixel tiles)
+// 100 col x 80 row matrix for a beautiful massive 3200x2560 overworld (32x32 pixel tiles)
 export const TILE_SIZE = 32;
-export const MAP_COLS = 25;
-export const MAP_ROWS = 19;
+export const MAP_COLS = 100;
+export const MAP_ROWS = 80;
 
-// Procedural organic map definition
+// Helper to calculate the river center line and whether it is a bridge row
+export function getRiverInfo(c: number, r: number) {
+  let riverCenter = 50;
+  let isBridgeRow = false;
+
+  if (r >= 35) {
+    // South vertical branch
+    riverCenter = 50 + Math.sin(r * 0.14) * 2.8;
+    isBridgeRow = r >= 54 && r <= 56;
+    const dist = Math.abs(c - riverCenter);
+    return { dist, isBridgeRow };
+  } else {
+    // NW or NE branch depending on which side of the center we are on
+    const targetNE = c >= 50;
+    if (targetNE) {
+      // Northeast arm
+      riverCenter = 100 - r * (50 / 35) - Math.sin(r * 0.16) * 2.5;
+      isBridgeRow = r >= 16 && r <= 18;
+    } else {
+      // Northwest arm
+      riverCenter = r * (50 / 35) + Math.sin(r * 0.16) * 2.5;
+      isBridgeRow = r >= 16 && r <= 18;
+    }
+    const dist = Math.abs(c - riverCenter);
+    return { dist, isBridgeRow };
+  }
+}
+
+// Procedural organic map definition representing the massive triple-continent archipelago
 export function generateTileMap(): TileType[][] {
   const map: TileType[][] = [];
 
   for (let r = 0; r < MAP_ROWS; r++) {
     const row: TileType[] = [];
     for (let c = 0; c < MAP_COLS; c++) {
-      const px = c * TILE_SIZE + TILE_SIZE / 2;
-      const py = r * TILE_SIZE + TILE_SIZE / 2;
+      // 1. Sea boundary at the absolute very outer edges of the map
+      if (c < 2 || c > 97 || r < 2 || r > 77) {
+        row.push("deep_water");
+        continue;
+      }
 
-      // 1. Central flowing river channel (Column 10-11 mostly)
-      // Flows from col 10 at top to col 11 in center to col 10 at bottom
-      const riverCenter = 10.5 + Math.sin(r * 0.35) * 1.0;
-      const distToRiver = Math.abs(c - riverCenter);
-
-      // Bridges cross river
-      const isBridgeRow = r === 6 || r === 7; // Dual tile bridge height
-
-      if (distToRiver < 0.9) {
-        if (isBridgeRow && c >= 10 && c <= 11) {
+      // 2. River and Bridges checks
+      const info = getRiverInfo(c, r);
+      if (info.dist < 1.6) {
+        if (info.isBridgeRow) {
           row.push("bridge");
         } else {
           row.push("river_water");
@@ -48,40 +73,28 @@ export function generateTileMap(): TileType[][] {
         continue;
       }
 
-      // 2. Island A: Logic & Math Plains (West, Purple)
-      // Centered at cx: 170, cy: 200 => col: 5.3, row: 6.25
-      const distToIslandA = Math.hypot(px - 170, py - 200);
+      // 3. Sandy riverbanks
+      if (info.dist >= 1.6 && info.dist < 2.5) {
+        row.push("sand");
+        continue;
+      }
 
-      // 3. Island B: Economics Valleys (East, Green/Gold)
-      // Centered at cx: 620, cy: 200 => col: 19.3, row: 6.25
-      const distToIslandB = Math.hypot(px - 620, py - 200);
+      // 4. Biome Partition (Voronoi classification using land centers)
+      // Center A (Logic): c: 20, r: 24 (approx x: 640, y: 768)
+      // Center B (Economics): c: 80, r: 24 (approx x: 2560, y: 768)
+      // Center C (Philosophy): c: 50, r: 61 (approx x: 1600, y: 1952)
+      const distA = Math.hypot(c - 20, r - 24);
+      const distB = Math.hypot(c - 80, r - 24);
+      const distC = Math.hypot(c - 50, r - 61);
 
-      // 4. Island C: Philosophy Peaks (South, Blueish Slate)
-      // Centered at cx: 420, cy: 480 => col: 13.1, row: 15.0
-      const distToIslandC = Math.hypot(px - 420, py - 480);
+      const minDist = Math.min(distA, distB, distC);
 
-      // Determine tile type based on distance thresholds
-      // Inner island receives primary terrain, middle receives beach sand, outer is deep water
-      if (distToIslandC < 140) {
-        if (distToIslandC < 115) {
-          row.push("slate_stone");
-        } else {
-          row.push("sand");
-        }
-      } else if (distToIslandA < 146) {
-        if (distToIslandA < 120) {
-          row.push("cyber_grass");
-        } else {
-          row.push("sand");
-        }
-      } else if (distToIslandB < 146) {
-        if (distToIslandB < 118) {
-          row.push("agrarian_grass");
-        } else {
-          row.push("sand");
-        }
+      if (minDist === distC) {
+        row.push("slate_stone");
+      } else if (minDist === distA) {
+        row.push("cyber_grass");
       } else {
-        row.push("deep_water");
+        row.push("agrarian_grass");
       }
     }
     map.push(row);
@@ -520,11 +533,24 @@ export function getMetaAssets(): MetaAssetsCache {
   return assetCache;
 }
 
-// Global drawing helpers to sew these parts onto active target canvases
-export function drawTileBackground(ctx: CanvasRenderingContext2D, mapMatrix: TileType[][]) {
+// Global drawing helpers to sew these parts onto active target canvases (with Spatial View Culling)
+export function drawTileBackground(
+  ctx: CanvasRenderingContext2D,
+  mapMatrix: TileType[][],
+  startX?: number,
+  startY?: number,
+  endX?: number,
+  endY?: number
+) {
   const assets = getMetaAssets();
-  for (let r = 0; r < MAP_ROWS; r++) {
-    for (let c = 0; c < MAP_COLS; c++) {
+
+  const startCol = startX !== undefined ? Math.max(0, Math.floor(startX / TILE_SIZE)) : 0;
+  const endCol = endX !== undefined ? Math.min(MAP_COLS - 1, Math.ceil(endX / TILE_SIZE)) : MAP_COLS - 1;
+  const startRow = startY !== undefined ? Math.max(0, Math.floor(startY / TILE_SIZE)) : 0;
+  const endRow = endY !== undefined ? Math.min(MAP_ROWS - 1, Math.ceil(endY / TILE_SIZE)) : MAP_ROWS - 1;
+
+  for (let r = startRow; r <= endRow; r++) {
+    for (let c = startCol; c <= endCol; c++) {
       const type = mapMatrix[r][c];
       const tileCanvas = assets.tiles[type];
       if (tileCanvas) {
