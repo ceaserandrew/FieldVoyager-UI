@@ -1,7 +1,12 @@
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, useMemo } from "react";
 import { LandmarkNode, Position } from "../types";
 import { LANDMARKS } from "../landmarksData";
 import { AvatarConfig, drawCompositedAvatar } from "../utils/avatarDrawer";
+import {
+  getMetaAssets,
+  generateTileMap,
+  drawTileBackground,
+} from "../utils/metaAssets";
 
 interface MapCanvasProps {
   avatarPos: Position;
@@ -30,6 +35,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const animationFrameRef = useRef<number | null>(null);
   const posRef = useRef<Position>(avatarPos);
   const targetRef = useRef<Position>(targetPos);
+
+  // Generate organic tilemap matrix
+  const mapMatrix = useMemo(() => generateTileMap(), []);
 
   const [hoveredNode, setHoveredNode] = useState<LandmarkNode | null>(null);
   const [direction, setDirection] = useState<"up" | "down" | "left" | "right">("down");
@@ -167,26 +175,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       const isOddTick = Math.floor(frameTick / 15) % 2 === 0;
 
-      // 1. WATER BACKGROUND with deep sea colors & moving waves
-      ctx.fillStyle = "#0c1726"; // Vibrant deep sea blue
-      ctx.fillRect(0, 0, 800, 600);
+      // 1. DYNAMIC PRE-RENDERED GRID TILEMAP STITCHING
+      drawTileBackground(ctx, mapMatrix);
 
-      // Draw subtle background water waves (pixel lines)
-      ctx.fillStyle = "#162840";
-      for (let x = 0; x < 800; x += 60) {
-        for (let y = 0; y < 600; y += 60) {
-          const waveShift = Math.floor(frameTick / 20) % 4;
-          if ((x + y) % 120 === 0) {
-            ctx.fillRect(x + waveShift * 2, y, 10, 2);
-            ctx.fillRect(x + waveShift * 2 + 4, y + 2.5, 4, 1);
-          }
+      // Subtle atmospheric deep-water foam wave drifts
+      ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+      for (let x = 0; x < 800; x += 128) {
+        for (let y = 0; y < 600; y += 128) {
+          const shift = Math.floor(frameTick / 16) % 8;
+          ctx.fillRect(x + shift * 2, y + shift, 12, 1.5);
+          ctx.fillRect(x + shift * 2 + 16, y + shift + 12, 8, 1);
         }
       }
 
-      // Draw travel sea path connections (retro golden sand trails)
-      ctx.strokeStyle = "rgba(250, 204, 21, 0.25)";
+      // 2. GOLDEN SAND ROAD TRAILS
+      ctx.strokeStyle = "rgba(251, 191, 36, 0.45)";
       ctx.lineWidth = 3;
-      ctx.setLineDash([8, 6]);
+      ctx.setLineDash([7, 6]);
       ctx.beginPath();
       // Logic plain to Philosophy down south
       ctx.moveTo(180, 220);
@@ -198,147 +203,73 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ctx.moveTo(230, 220);
       ctx.lineTo(580, 220);
       ctx.stroke();
-      ctx.setLineDash([]); // Reset line dash
+      ctx.setLineDash([]); // Reset dash
 
-      // Helper for drawing various trees with interactive sway
-      const drawPixelTree = (tx: number, ty: number, leafColor: string, trunkColor: string = "#713f12") => {
-        const treeSwayX = Math.sin(frameTick * 0.035 + tx) * 1.6;
+      // 3. SAPPHIRE RIVER FLOWS & ACTIVE SALMON
+      ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
+      const ripplePos = (frameTick * 0.95) % 180;
+      ctx.fillRect(332 + Math.sin(frameTick * 0.03) * 4, 80 + (ripplePos % 480), 10, 2);
+      ctx.fillRect(342 + Math.cos(frameTick * 0.04) * 3, 260 + ((ripplePos + 90) % 480), 8, 1.5);
 
-        // Ground shadow
-        ctx.fillStyle = "rgba(4, 8, 15, 0.4)";
-        ctx.beginPath();
-        ctx.ellipse(tx, ty + 10, 9, 4, 0, 0, Math.PI * 2);
-        ctx.fill();
+      // Animated salmon fish jumping in river
+      for (let f = 0; f < 3; f++) {
+        const fy = (f * 180 + frameTick * 0.8) % 640 - 20;
+        const fx = 338 + Math.sin(frameTick * 0.05 + f) * 8;
+        ctx.fillStyle = "#f43f5e"; // hot coral scale
+        ctx.fillRect(fx - 2, fy - 4, 4, 8);
+        const tailWag = Math.floor(frameTick / 5) % 2 === 0 ? 1.5 : -1.5;
+        ctx.fillStyle = "#be123c";
+        ctx.fillRect(fx + tailWag - 0.5, fy + 4, 1.5, 3);
+      }
 
-        // Trunk
-        ctx.fillStyle = trunkColor;
-        ctx.fillRect(tx - 2, ty, 4, 10);
+      // Wooden rustic bridge details (drawn over the River bridge tiles to add wood borders)
+      ctx.fillStyle = "#451a03"; // dark wood columns
+      ctx.fillRect(318, 190, 4, 66);
+      ctx.fillRect(382, 190, 4, 66);
 
-        // Leaves tier 1 (Lower crown)
-        ctx.fillStyle = leafColor;
-        ctx.beginPath();
-        ctx.arc(tx + treeSwayX * 0.6, ty - 2, 8.5, 0, Math.PI * 2);
-        ctx.fill();
+      // 4. LANDSCAPE PROPS AND SWAYING TREES
+      const assets = getMetaAssets();
 
-        // Leaves tier 2 (Upper crown)
-        ctx.fillStyle = leafColor;
-        ctx.globalAlpha = 0.88;
-        ctx.beginPath();
-        ctx.arc(tx + treeSwayX, ty - 6, 6.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1.0;
+      const drawScenicTree = (tx: number, ty: number, treeType: "oak" | "pine" | "cyber") => {
+        const sway = Math.sin(frameTick * 0.035 + tx) * 1.5;
+        const treeCanvas =
+          treeType === "oak"
+            ? assets.landscapeProps.oakTree
+            : treeType === "pine"
+            ? assets.landscapeProps.pineTree
+            : assets.landscapeProps.neonCrystalTree;
 
-        // Draw shadow rim
-        ctx.strokeStyle = "rgba(15, 23, 42, 0.15)";
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        // Highlight bud
-        ctx.fillStyle = "#ffffff";
-        ctx.globalAlpha = 0.25;
-        ctx.fillRect(tx - 2 + treeSwayX, ty - 8, 2, 2);
-        ctx.globalAlpha = 1.0;
+        ctx.save();
+        ctx.translate(tx, ty);
+        // Transform for wind-sway effect
+        ctx.transform(1, 0, sway * 0.045, 1, 0, 0);
+        ctx.drawImage(treeCanvas, -16, -42);
+        ctx.restore();
       };
 
-      // Helper for drawing cozy cottages (Stardew Style)
-      const drawCottage = (hx: number, hy: number, roofColor: string, wallColor: string, isClassic: boolean = false) => {
-        // shadow
-        ctx.fillStyle = "rgba(15, 23, 42, 0.35)";
-        ctx.fillRect(hx - 16, hy + 12, 34, 6);
+      const drawScenicCottage = (hx: number, hy: number) => {
+        ctx.drawImage(assets.landscapeProps.cozyCottage, hx - 32, hy - 32);
 
-        // Wall
-        ctx.fillStyle = wallColor;
-        ctx.fillRect(hx - 14, hy - 4, 28, 16);
-
-        // Wood framing lines
-        ctx.fillStyle = "rgba(0,0,0,0.12)";
-        ctx.fillRect(hx - 14, hy + 2, 28, 2);
-        ctx.fillRect(hx - 10, hy + 8, 6, 2);
-
-        // Roof
-        ctx.fillStyle = roofColor;
+        // Animated smoke plumes rising puffs
+        const smokeOffset = (frameTick % 28) / 3.5;
+        ctx.fillStyle = "rgba(241, 245, 249, 0.4)";
         ctx.beginPath();
-        ctx.moveTo(hx - 18, hy - 4);
-        ctx.lineTo(hx + 18, hy - 4);
-        ctx.lineTo(hx, hy - 18);
-        ctx.closePath();
+        ctx.arc(hx + 11 - smokeOffset * 0.4, hy - 14 - smokeOffset * 1.4, 2.5 + smokeOffset * 0.15, 0, Math.PI * 2);
         ctx.fill();
-
-        // Roof trim
-        ctx.fillStyle = "#1e293b";
-        ctx.fillRect(hx - 18, hy - 5, 36, 2);
-
-        // Chimney
-        ctx.fillStyle = "#4b5563";
-        ctx.fillRect(hx + 8, hy - 14, 5, 8);
-        ctx.fillStyle = "#1f2937";
-        ctx.fillRect(hx + 7, hy - 15, 7, 2);
-
-        // Chimney smoke particles
-        const smokeOffset = (frameTick % 24) / 4;
-        ctx.fillStyle = "rgba(226, 232, 240, 0.45)";
-        ctx.fillRect(hx + 9 - smokeOffset * 0.5, hy - 18 - smokeOffset * 1.5, 3, 3);
-        ctx.fillRect(hx + 11 - smokeOffset * 0.3, hy - 23 - smokeOffset * 1.8, 4, 4);
-
-        // Door
-        ctx.fillStyle = "#78350f"; // Wood door
-        ctx.fillRect(hx - 4, hy + 3, 7, 9);
-        ctx.fillStyle = "#facc15"; // Gold knob
-        ctx.fillRect(hx + 1, hy + 7, 1.5, 1.5);
-
-        // Window with yellow light glowing inside
-        ctx.fillStyle = "#facc15";
-        ctx.fillRect(hx - 10, hy, 4, 4);
-        ctx.fillRect(hx + 6, hy, 4, 4);
-        ctx.fillStyle = "rgba(0,0,0,0.15)";
-        ctx.fillRect(hx - 10, hy, 4, 1);
-        ctx.fillRect(hx + 6, hy, 4, 1);
-      };
-
-      // Helper for classical Greek structure (Pillars & Pediment)
-      const drawGreekTemple = (tx: number, ty: number) => {
-        // Shadow
-        ctx.fillStyle = "rgba(15, 23, 42, 0.35)";
-        ctx.fillRect(tx - 24, ty + 12, 48, 6);
-
-        // Base stairs
-        ctx.fillStyle = "#cbd5e1";
-        ctx.fillRect(tx - 22, ty + 8, 44, 4);
-        ctx.fillStyle = "#94a3b8";
-        ctx.fillRect(tx - 20, ty + 5, 40, 3);
-
-        // Pillars (Draw 4 pillars)
-        ctx.fillStyle = "#e2e8f0";
-        for (let p = 0; p < 4; p++) {
-          const px = tx - 16 + p * 10;
-          ctx.fillRect(px, ty - 12, 4, 17);
-          ctx.fillStyle = "#64748b";
-          ctx.fillRect(px, ty + 4, 4, 1);
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(px, ty - 12, 4, 1);
-        }
-
-        // Architraves & Arch Pediment
-        ctx.fillStyle = "#cbd5e1";
-        ctx.fillRect(tx - 18, ty - 15, 36, 3);
-
-        // Pediment Triangle
-        ctx.fillStyle = "#cbd5e1";
         ctx.beginPath();
-        ctx.moveTo(tx - 20, ty - 15);
-        ctx.lineTo(tx + 20, ty - 15);
-        ctx.lineTo(tx, ty - 27);
-        ctx.closePath();
-        ctx.fill();
-
-        // Triangular gold shield emblem
-        ctx.fillStyle = "#fbbf24";
-        ctx.beginPath();
-        ctx.arc(tx, ty - 18, 2, 0, Math.PI * 2);
+        ctx.arc(hx + 13 - smokeOffset * 0.2, hy - 20 - smokeOffset * 1.6, 3.5 + smokeOffset * 0.25, 0, Math.PI * 2);
         ctx.fill();
       };
 
-      // Draw mountain triangles with snowy peaks
+      const drawScenicTemple = (tx: number, ty: number) => {
+        ctx.drawImage(assets.landscapeProps.classicalTemple, tx - 40, ty - 46);
+      };
+
+      const drawScenicSpire = (sx: number, sy: number) => {
+        ctx.drawImage(assets.landscapeProps.cyberSpire, sx - 24, sy - 52);
+      };
+
+      // Helper for drawing snowy mountain base
       const drawMountain = (mx: number, my: number, size: number) => {
         ctx.fillStyle = "#334155";
         ctx.beginPath();
@@ -348,7 +279,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.closePath();
         ctx.fill();
 
-        // Snowy peak cap
+        // Snowy cap
         ctx.fillStyle = "#f1f5f9";
         ctx.beginPath();
         ctx.moveTo(mx, my);
@@ -358,275 +289,65 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.fill();
       };
 
-      // 2. CONTINENT A: Logic & Math Plains (CYBER FUTURISTIC ERA - West, Purple crystal theme)
-      // Beach Shoreline
-      ctx.fillStyle = "#581c87"; // Vibrant purple shore
-      ctx.beginPath();
-      ctx.arc(170, 200, 150, 0, Math.PI * 2);
-      ctx.fill();
+      // A. Main West Island (Logic Spires & Sakura Trees)
+      drawScenicSpire(110, 150);
+      drawScenicSpire(260, 220);
+      drawScenicTree(90, 220, "cyber");
+      drawScenicTree(140, 270, "cyber");
+      drawScenicTree(130, 100, "cyber");
 
-      // Shore wave foam overlay
-      ctx.strokeStyle = "rgba(216, 180, 254, 0.3)";
-      ctx.lineWidth = 2.5 + Math.sin(frameTick * 0.08) * 1.1;
-      ctx.beginPath();
-      ctx.arc(170, 200, 151, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Main Landmass
-      ctx.fillStyle = "#2e0854"; // Deep amethyst purple soil
-      ctx.beginPath();
-      ctx.arc(170, 200, 142, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Futuristic floor tech matrix overlay lines
-      ctx.strokeStyle = "rgba(168, 85, 247, 0.16)";
-      ctx.lineWidth = 1.2;
-      for (let mx = 40; mx <= 300; mx += 25) {
-        ctx.beginPath();
-        ctx.moveTo(mx - 20, 60);
-        ctx.lineTo(mx + 20, 340);
-        ctx.stroke();
-      }
-      for (let my = 60; my <= 340; my += 25) {
-        ctx.beginPath();
-        ctx.moveTo(40, my - 20);
-        ctx.lineTo(300, my + 20);
-        ctx.stroke();
-      }
-
-      // Glowing circuit nodes inside soil
-      ctx.fillStyle = "#e9d5ff";
-      ctx.fillRect(115, 120, 4, 4);
-      ctx.fillRect(235, 140, 3, 3);
-      ctx.fillRect(80, 250, 3, 3);
-
-      // Cyber Spires
-      const drawCyberSpire = (sx: number, sy: number) => {
-        ctx.fillStyle = "rgba(168, 85, 247, 0.22)";
-        ctx.beginPath();
-        ctx.arc(sx, sy + 15, 14, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = "#581c87";
-        ctx.fillRect(sx - 5, sy - 15, 10, 30);
-        ctx.fillStyle = "#a855f7";
-        ctx.fillRect(sx - 3, sy - 28, 6, 13);
-        
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(sx - 1, sy - 34, 2, 6);
-
-        // Core pulsating neon light
-        ctx.fillStyle = isOddTick ? "#ec4899" : "#a855f7";
-        ctx.fillRect(sx - 2, sy - 3, 4, 6);
-      };
-
-      drawCyberSpire(110, 150);
-      drawCyberSpire(260, 220);
-
-      // Neon purple crystal trees
-      drawPixelTree(90, 220, "#d8b4fe", "#581c87");
-      drawPixelTree(140, 270, "#f472b6", "#581c87");
-      drawPixelTree(130, 100, "#d8b4fe", "#581c87");
-
-      // Boolean glyph text labels floating on cyber background
-      ctx.fillStyle = "rgba(226, 232, 240, 0.32)";
+      // Floating logic symbols
+      ctx.fillStyle = "rgba(233, 213, 255, 0.4)";
       ctx.font = 'bold 9px "JetBrains Mono", monospace';
       ctx.fillText("p ∧ q", 80, 130);
       ctx.fillText("¬ p", 230, 150);
       ctx.fillText("∃ x ∈ S", 170, 90);
 
-
-      // 3. CONTINENT B: Economics Valleys (MEDIEVAL AGRARIAN ERA - East, Green/Gold Stardew Valley theme)
-      // Sandy shoreline
-      ctx.fillStyle = "#fef08a"; // Beautiful bright Yellow Stardew sandy beach
-      ctx.beginPath();
-      ctx.arc(620, 200, 150, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Sandy wave foam
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
-      ctx.lineWidth = 2 + Math.sin(frameTick * 0.08 + 2) * 1.0;
-      ctx.beginPath();
-      ctx.arc(620, 200, 151, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Main soil land
-      ctx.fillStyle = "#15803d"; // Rich forest green grass
-      ctx.beginPath();
-      ctx.arc(620, 200, 142, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Detailed pixelated grass clumps to avoid plain colors
-      ctx.fillStyle = "#14532d";
-      for (let gx = 490; gx <= 750; gx += 20) {
-        for (let gy = 70; gy <= 330; gy += 25) {
-          if ((gx * 3 + gy) % 7 === 0) {
-            ctx.fillRect(gx, gy, 1, 3);
-            ctx.fillRect(gx + 2, gy - 1, 1, 4);
-            ctx.fillRect(gx + 4, gy, 1, 2);
-          }
-        }
+      // B. Main East Island (Agrarian cottages & Oak forests)
+      drawScenicCottage(655, 140);
+      drawScenicCottage(550, 110);
+      // crop sprouts
+      ctx.fillStyle = "#a3e635";
+      for (let cropY = 175; cropY <= 192; cropY += 6) {
+        ctx.fillRect(525, cropY, 2.5, 2.5);
+        ctx.fillRect(535, cropY, 2.5, 2.5);
+        ctx.fillRect(545, cropY, 2.5, 2.5);
       }
-
-      // Draw Stardew dirt patches for crops
-      ctx.fillStyle = "#78350f"; // Rich brown farm soil
-      ctx.fillRect(520, 170, 32, 24);
-      ctx.fillRect(560, 230, 48, 16);
-
-      // Ordered rows of tiny pixel crops
-      ctx.fillStyle = "#a3e635"; // Young crop sprouts
-      for (let cropY = 173; cropY <= 190; cropY += 6) {
-        ctx.fillRect(524, cropY, 2, 2);
-        ctx.fillRect(534, cropY, 2, 2);
-        ctx.fillRect(544, cropY, 2, 2);
+      ctx.fillStyle = "#fb923c"; // golden pumpkins
+      for (let cropX = 566; cropX <= 600; cropX += 8) {
+        ctx.fillRect(cropX, 232, 3.5, 3);
+        ctx.fillRect(cropX + 2, 230, 2, 3.5);
       }
-      ctx.fillStyle = "#eab308"; // Golden grain crops
-      for (let cropX = 564; cropX <= 600; cropX += 8) {
-        ctx.fillRect(cropX, 232, 2, 4);
-        ctx.fillRect(cropX + 1, 230, 2, 3);
-      }
-
-      // Cozy Medieval Farmhouses, trading cottages, and silos
-      drawCottage(650, 140, "#991b1b", "#fef3c7"); // Cottage A (red roof)
-      drawCottage(550, 110, "#1e3a8a", "#e2e8f0"); // Trading Cottage B (blue roof)
-
-      // Brown JRPG wooden fences
-      ctx.fillStyle = "#7c2d12"; // Dark reddish wood
+      // wooden fences
+      ctx.fillStyle = "#7c2d12";
       ctx.fillRect(510, 160, 2, 42);
       ctx.fillRect(510, 170, 45, 2);
       ctx.fillRect(510, 196, 45, 2);
+      // trees
+      drawScenicTree(600, 80, "oak");
+      drawScenicTree(680, 210, "oak");
+      drawScenicTree(710, 160, "oak");
+      drawScenicTree(720, 100, "oak");
 
-      // Flower patches
-      ctx.fillStyle = "#ef4444"; // Red
-      ctx.fillRect(680, 250, 2, 2);
-      ctx.fillRect(684, 254, 2, 2);
-      ctx.fillRect(690, 248, 2, 2);
-      ctx.fillStyle = "#eab308"; // Yellow sunflower dots
-      ctx.fillRect(682, 252, 2, 2);
-      ctx.fillRect(688, 251, 2, 2);
-
-      // Red Stardew mushrooms under the trees
-      ctx.fillStyle = "#ef4444";
-      ctx.fillRect(725, 112, 3, 3);
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(726, 112, 1, 1);
-
-      // Lush forest trees (Stardew style greens)
-      drawPixelTree(600, 80, "#22c55e");
-      drawPixelTree(680, 210, "#16a34a");
-      drawPixelTree(710, 160, "#15803d");
-      drawPixelTree(720, 100, "#16a34a");
-
-
-      // 4. CONTINENT C: Philosophy Peaks (ANCIENT GREEK / PHILOSOPHY PEAKS - South, Blueish Slate & Columns)
-      // Chalk shorelines
-      ctx.fillStyle = "#cbd5e1"; // Slate white/gray limestone beaches
-      ctx.beginPath();
-      ctx.arc(420, 480, 150, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Limestone wave foam
-      ctx.strokeStyle = "rgba(241, 245, 249, 0.35)";
-      ctx.lineWidth = 2 + Math.sin(frameTick * 0.08 + 4) * 1.0;
-      ctx.beginPath();
-      ctx.arc(420, 480, 151, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Main landmass
-      ctx.fillStyle = "#1e293b"; // Slate rock gray
-      ctx.beginPath();
-      ctx.arc(420, 480, 142, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Cobblestone ground textures
-      ctx.fillStyle = "#334155";
-      for (let cx = 290; cx <= 550; cx += 22) {
-        for (let cy = 354; cy <= 590; cy += 22) {
-          if ((cx + cy * 2) % 9 === 0) {
-            ctx.fillRect(cx, cy, 6, 3);
-            ctx.fillRect(cx + 3, cy + 2, 3, 3);
-          }
-        }
-      }
-
-      // Classical white marble villas & grand temple columns
-      drawGreekTemple(330, 460); // Classical Academy
-      drawGreekTemple(520, 440); // Lyceum Forum
-
-      // Snowy classical peak mountains in the high south
+      // C. Main South Island (Philosophy Greek Temples & Shrines)
+      drawScenicTemple(330, 460);
+      drawScenicTemple(520, 440);
+      // Mountains
       drawMountain(410, 390, 40);
       drawMountain(460, 410, 30);
+      // Shrines & Braziers with active flames
+      const flameBrazier = assets.landscapeProps.shrineBrazier[Math.floor(frameTick / 6) % 4];
+      ctx.drawImage(flameBrazier, 380 - 8, 460 - 12);
+      ctx.drawImage(flameBrazier, 470 - 8, 470 - 12);
+      // Ancient cypress trees
+      drawScenicTree(280, 480, "pine");
+      drawScenicTree(560, 490, "pine");
+      drawScenicTree(360, 520, "pine");
 
-      // Little stone shrines with flame braziers
-      const drawBrazier = (bx: number, by: number) => {
-        ctx.fillStyle = "#64748b";
-        ctx.fillRect(bx - 3, by, 6, 8);
-        ctx.fillStyle = "#334155";
-        ctx.fillRect(bx - 4, by - 2, 8, 2);
-        // glowing fire block
-        ctx.fillStyle = isOddTick ? "#ef4444" : "#f97316";
-        ctx.fillRect(bx - 2, by - 5, 4, 4);
-      };
-      drawBrazier(380, 460);
-      drawBrazier(470, 470);
-
-      // Pale cypress & silver olive trees
-      drawPixelTree(280, 480, "#475569", "#0f172a");
-      drawPixelTree(560, 490, "#475569", "#0f172a");
-      drawPixelTree(360, 520, "#64748b", "#0f172a");
-
-
-      // 5. THE RIVERS, STREAMING CHANNELS, & COSY WOODEN BRIDGES (有河，有水，有桥 🌉)
-      // Emerald flowing river dividing Logic/Cyber plains from Middle Tranquil delta
-      ctx.fillStyle = "#38bdf8"; // Gorgeous sparkling river blue water
-      ctx.strokeStyle = "#0284c7"; // deep blue trim
-      ctx.lineWidth = 1;
-
-      // Draw flowing river channels connecting the water borders
-      ctx.beginPath();
-      ctx.moveTo(330, 0);
-      ctx.bezierCurveTo(360, 150, 390, 300, 320, 600);
-      ctx.lineTo(352, 600);
-      ctx.bezierCurveTo(422, 300, 392, 150, 362, 0);
-      ctx.closePath();
-      ctx.fill();
-
-      // Central river waves ripples
-      ctx.fillStyle = "#e0f2fe";
-      const ripplePos = (frameTick * 0.8) % 180;
-      ctx.fillRect(350, 80 + (ripplePos % 500), 8, 2);
-      ctx.fillRect(370, 160 + (ripplePos % 400), 6, 1.5);
-      ctx.fillRect(360, 280 + (ripplePos % 300), 10, 2);
-
-      // Cute little salmon fish swimming inside the river with dynamic tail wags!
-      for (let f = 0; f < 3; f++) {
-        const fy = (f * 180 + frameTick * 0.6) % 650 - 50;
-        const fx = 345 + Math.sin(frameTick * 0.05 + f) * 8;
-        ctx.fillStyle = "#f97316"; // Coral salmon
-        ctx.fillRect(fx - 2, fy - 4, 4, 8);
-        const tailWag = Math.floor(frameTick / 5) % 2 === 0 ? 1.5 : -1.5;
-        ctx.fillStyle = "#ea580c";
-        ctx.fillRect(fx + tailWag - 0.5, fy + 4, 1.5, 3);
-      }
-
-      // A cute rustic wooden Stardew style bridge connecting Cyber plains to Economics across the river!
-      ctx.fillStyle = "#7c2d12"; // dark wood frames
-      ctx.fillRect(340, 210, 45, 14); // wooden deck
-      ctx.fillStyle = "#b45309"; // amber brown plank lines
-      for (let bx = 343; bx <= 380; bx += 7) {
-        ctx.fillRect(bx, 210, 4, 14);
-      }
-      ctx.fillStyle = "#facc15"; // gold rivets
-      ctx.fillRect(341, 209, 2, 2);
-      ctx.fillRect(382, 209, 2, 2);
-      ctx.fillRect(341, 223, 2, 2);
-      ctx.fillRect(382, 223, 2, 2);
-
-
-      // 6. SOARING WHITE BIRDS IN THE WIND
-      const birdX = (frameTick * 0.8) % 960 - 100;
+      // 5. WIND WEATHER SOARING WHITE BIRDS
+      const birdX = (frameTick * 0.85) % 960 - 100;
       const birdY = 110 + Math.sin(frameTick * 0.015) * 20;
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.48)";
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       const wingSway = Math.sin(frameTick * 0.14) > 0 ? -4 : 4;
@@ -635,13 +356,27 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ctx.lineTo(birdX + 7, birdY + wingSway);
       ctx.stroke();
 
+      // 6. VOLUME DRIFTING CLOUDS OVERLAY (casts soft shadows below)
+      const cloudCanvas = assets.landscapeProps.cloud;
+      for (let c = 0; c < 2; c++) {
+        const cSpeed = 0.4 + c * 0.15;
+        const cx = ((frameTick * cSpeed) + c * 380) % 960 - 100;
+        const cy = 40 + c * 240 + Math.sin(frameTick * 0.012 + c) * 12;
+        // Shadow cast
+        ctx.fillStyle = "rgba(0, 0, 0, 0.07)";
+        ctx.beginPath();
+        ctx.ellipse(cx + 48, cy + 50, 38, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Cloud body
+        ctx.drawImage(cloudCanvas, cx, cy);
+      }
 
-      // 7. DRAW ALL INTERACTIVE AND GLOWING LANDMARK NODES ON EARTH GRID
+      // 7. DRAW INTERACTIVE AND GLOWING LANDMARK NODES
       LANDMARKS.forEach((node) => {
         const isSolved = solvedNodeIds.includes(node.id);
         const pulse = 1 + Math.sin(frameTick * 0.08) * 0.08;
 
-        // Draw selection halo if hovered or active
+        // Selection halo
         const isHovered = hoveredNode?.id === node.id;
         const isActive = activeNodeId === node.id;
         if (isHovered || isActive) {
@@ -652,13 +387,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           ctx.stroke();
         }
 
-        // Draw node glowing background halo
+        // Glow halo
         const gradient = ctx.createRadialGradient(node.x, node.y, 2, node.x, node.y, 18 * pulse);
         if (isSolved) {
           gradient.addColorStop(0, node.color);
           gradient.addColorStop(1, "rgba(0,0,0,0)");
         } else {
-          gradient.addColorStop(0, "rgba(148, 163, 184, 0.5)"); // grey
+          gradient.addColorStop(0, "rgba(148, 163, 184, 0.5)");
           gradient.addColorStop(1, "rgba(0,0,0,0)");
         }
         ctx.fillStyle = gradient;
@@ -666,7 +401,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.arc(node.x, node.y, 20 * pulse, 0, Math.PI * 2);
         ctx.fill();
 
-        // Node center pin
+        // Pin center
         ctx.fillStyle = isSolved ? node.color : "#64748b";
         ctx.strokeStyle = isSolved ? "#ffffff" : "#475569";
         ctx.lineWidth = 3;
@@ -675,11 +410,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.fill();
         ctx.stroke();
 
-        // Draw pixel icons over landmarks
+        // Icon decals overlay
         ctx.save();
         ctx.translate(node.x, node.y - 12);
-        
-        // Pixel drawings
+
         if (node.icon === "gate") {
           ctx.fillStyle = isSolved ? "#d8b4fe" : "#94a3b8";
           ctx.fillRect(-6, -4, 3, 10);
@@ -687,7 +421,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           ctx.fillRect(-6, -6, 13, 3);
           if (isSolved) {
             ctx.fillStyle = "#fbbf24";
-            ctx.fillRect(-1, -1, 3, 3); // pulsing key orb
+            ctx.fillRect(-1, -1, 3, 3);
           }
         } else if (node.icon === "crystal") {
           ctx.fillStyle = isSolved ? "#ec4899" : "#64748b";
@@ -729,7 +463,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           ctx.lineTo(-2, 3);
           ctx.closePath();
           ctx.fill();
-        } else { // "scroll"
+        } else {
           ctx.fillStyle = isSolved ? "#fb923c" : "#64748b";
           ctx.fillRect(-6, -3, 13, 7);
           ctx.fillStyle = isSolved ? "#ffedd5" : "#475569";
@@ -738,7 +472,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.restore();
       });
 
-      // 8. DRAW CLICK-DESTINATION FLAG (if exists and moving)
+      // 8. DOUBLE DOT PATH FOCUS INDICATORS
       if (isWalking) {
         ctx.strokeStyle = "#fb7185";
         ctx.lineWidth = 1.5;
@@ -748,7 +482,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Animated red cursor cross
         ctx.fillStyle = "#fb7185";
         ctx.fillRect(targetRef.current.x - 1, targetRef.current.y - 5, 2, 10);
         ctx.fillRect(targetRef.current.x - 5, targetRef.current.y - 1, 10, 2);
