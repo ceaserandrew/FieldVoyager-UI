@@ -1,0 +1,11 @@
+{
+  "id": "palette-moss-wanderer",
+  "name": "Moss Wanderer",
+  "colors": {
+    "primary": "#3f6212",
+    "secondary": "#b45309",
+    "accent": "#84cc16",
+    "skin": "#ffded3",
+    "hair": "#1e3a1e"
+  }
+}

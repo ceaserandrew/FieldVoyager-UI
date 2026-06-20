@@ -1,0 +1,11 @@
+{
+  "id": "palette-neutral-seeker",
+  "name": "Neutral Seeker",
+  "colors": {
+    "primary": "#475569",
+    "secondary": "#64748b",
+    "accent": "#f8fafc",
+    "skin": "#fed7aa",
+    "hair": "#334155"
+  }
+}

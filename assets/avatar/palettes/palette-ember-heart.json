@@ -1,0 +1,11 @@
+{
+  "id": "palette-ember-heart",
+  "name": "Ember Heart",
+  "colors": {
+    "primary": "#dc2626",
+    "secondary": "#d97706",
+    "accent": "#f97316",
+    "skin": "#ffedd5",
+    "hair": "#7c2d12"
+  }
+}

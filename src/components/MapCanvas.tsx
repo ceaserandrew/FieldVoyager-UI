@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from "react";
 import { LandmarkNode, Position } from "../types";
 import { LANDMARKS } from "../landmarksData";
+import { AvatarConfig, drawCompositedAvatar } from "../utils/avatarDrawer";
 
 interface MapCanvasProps {
   avatarPos: Position;
@@ -11,6 +12,7 @@ interface MapCanvasProps {
   activeNodeId: string | null;
   onNearNode: (node: LandmarkNode) => void;
   isDialogueOpen: boolean;
+  avatarConfig?: AvatarConfig;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -22,6 +24,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   activeNodeId,
   onNearNode,
   isDialogueOpen,
+  avatarConfig,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -756,85 +759,95 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const ay = posRef.current.y;
       
       ctx.save();
-      ctx.translate(ax, ay);
-
-      // Bob character up and down slightly if walking (Stardew-like bouncy walk cycles)
-      const bobY = isWalking ? Math.round(Math.sin(frameTick * 0.3) * 1.5) : 0;
-      
-      const walkFrame = Math.floor(frameTick / 6) % 4;
-      const lfOffset = (isWalking && walkFrame === 0) ? -3 : 0;
-      const rfOffset = (isWalking && walkFrame === 2) ? -3 : 0;
-
       // Draw shadow
       ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
       ctx.beginPath();
-      ctx.ellipse(0, 14, 11, 4.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(ax, ay + 14, 11, 4.5, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Translate bob
-      ctx.translate(0, bobY);
+      // Draw paper-doll custom composited avatar
+      const walkFrame = Math.floor(frameTick / 6) % 4;
 
-      // BackPack box (drawn behind depending on direction)
-      if (direction === "up" || direction === "left") {
-        ctx.fillStyle = "#b45309"; // Leder gold brown leather backpack
-        ctx.fillRect(2, -4, 5, 10);
-      } else if (direction === "right") {
-        ctx.fillStyle = "#b45309";
-        ctx.fillRect(-7, -4, 5, 10);
-      }
+      if (avatarConfig) {
+        ctx.save();
+        // Since the draw function expects frame coordinates inside 64x48 width,
+        // we offset ax and ay so the feet align correctly at (ax, ay)
+        ctx.translate(ax - 32, ay - 30);
+        drawCompositedAvatar(ctx, 0, 0, avatarConfig, direction, walkFrame, isWalking);
+        ctx.restore();
+      } else {
+        ctx.translate(ax, ay);
 
-      // LEGS / BOOTS
-      ctx.fillStyle = "#451a03"; // dark leather brown
-      ctx.fillRect(-5, 9 + lfOffset, 3, 5); // left boot
-      ctx.fillRect(2, 9 + rfOffset, 3, 5);  // right boot
+        // Bob character up and down slightly if walking (Stardew-like bouncy walk cycles)
+        const bobY = isWalking ? Math.round(Math.sin(frameTick * 0.3) * 1.5) : 0;
+        const lfOffset = (isWalking && walkFrame === 0) ? -3 : 0;
+        const rfOffset = (isWalking && walkFrame === 2) ? -3 : 0;
 
-      // CLOTHING/COAT (Tunic body)
-      ctx.fillStyle = "#ea580c"; // Vibrant Stardew orange-brown voyager coat
-      ctx.fillRect(-6, -2, 12, 11);
-      
-      // Coat collar details
-      ctx.fillStyle = "#ffbe0b";
-      ctx.fillRect(-3, -2, 6, 2);
+        // Translate bob
+        ctx.translate(0, bobY);
 
-      // SATCHEL SLING STRAP
-      ctx.fillStyle = "#ca8a04";
-      ctx.fillRect(-6, 2, 12, 2);
+        // BackPack box (drawn behind depending on direction)
+        if (direction === "up" || direction === "left") {
+          ctx.fillStyle = "#b45309"; // Leder gold brown leather backpack
+          ctx.fillRect(2, -4, 5, 10);
+        } else if (direction === "right") {
+          ctx.fillStyle = "#b45309";
+          ctx.fillRect(-7, -4, 5, 10);
+        }
 
-      // PEACH SKIN FACE
-      ctx.fillStyle = "#fed9b7";
-      ctx.fillRect(-5, -9, 10, 7);
+        // LEGS / BOOTS
+        ctx.fillStyle = "#451a03"; // dark leather brown
+        ctx.fillRect(-5, 9 + lfOffset, 3, 5); // left boot
+        ctx.fillRect(2, 9 + rfOffset, 3, 5);  // right boot
 
-      // HAIR
-      ctx.fillStyle = "#2563eb"; // Elegant royal blue JRPG dynamic curly hair
-      ctx.fillRect(-6, -13, 12, 5); // Top hair
-      ctx.fillRect(-6, -9, 2, 6);   // Side hair left
-      ctx.fillRect(4, -9, 2, 6);    // Side hair right
+        // CLOTHING/COAT (Tunic body)
+        ctx.fillStyle = "#ea580c"; // Vibrant Stardew orange-brown voyager coat
+        ctx.fillRect(-6, -2, 12, 11);
+        
+        // Coat collar details
+        ctx.fillStyle = "#ffbe0b";
+        ctx.fillRect(-3, -2, 6, 2);
 
-      // EYES (Directional)
-      ctx.fillStyle = "#0c1020"; // Dark blue eyes
-      if (direction === "down") {
-        ctx.fillRect(-3, -6, 2, 2);
-        ctx.fillRect(1, -6, 2, 2);
-        // Headband visor
-        ctx.fillStyle = "#ff006e";
-        ctx.fillRect(-5, -9, 10, 2);
-      } else if (direction === "right") {
-        ctx.fillRect(1, -6, 2, 2);
-        ctx.fillRect(3, -6, 1, 2);
-        ctx.fillStyle = "#ff006e";
-        ctx.fillRect(-3, -9, 8, 2);
-      } else if (direction === "left") {
-        ctx.fillRect(-3, -6, 2, 2);
-        ctx.fillRect(-4, -6, 1, 2);
-        ctx.fillStyle = "#ff006e";
-        ctx.fillRect(-5, -9, 8, 2);
-      } else if (direction === "up") {
-        // Back of blue hair
-        ctx.fillStyle = "#2563eb";
+        // SATCHEL SLING STRAP
+        ctx.fillStyle = "#ca8a04";
+        ctx.fillRect(-6, 2, 12, 2);
+
+        // PEACH SKIN FACE
+        ctx.fillStyle = "#fed9b7";
         ctx.fillRect(-5, -9, 10, 7);
-        // Headband tie node
-        ctx.fillStyle = "#ff006e";
-        ctx.fillRect(-2, -6, 4, 2);
+
+        // HAIR
+        ctx.fillStyle = "#2563eb"; // Elegant royal blue JRPG dynamic curly hair
+        ctx.fillRect(-6, -13, 12, 5); // Top hair
+        ctx.fillRect(-6, -9, 2, 6);   // Side hair left
+        ctx.fillRect(4, -9, 2, 6);    // Side hair right
+
+        // EYES (Directional)
+        ctx.fillStyle = "#0c1020"; // Dark blue eyes
+        if (direction === "down") {
+          ctx.fillRect(-3, -6, 2, 2);
+          ctx.fillRect(1, -6, 2, 2);
+          // Headband visor
+          ctx.fillStyle = "#ff006e";
+          ctx.fillRect(-5, -9, 10, 2);
+        } else if (direction === "right") {
+          ctx.fillRect(1, -6, 2, 2);
+          ctx.fillRect(3, -6, 1, 2);
+          ctx.fillStyle = "#ff006e";
+          ctx.fillRect(-3, -9, 8, 2);
+        } else if (direction === "left") {
+          ctx.fillRect(-3, -6, 2, 2);
+          ctx.fillRect(-4, -6, 1, 2);
+          ctx.fillStyle = "#ff006e";
+          ctx.fillRect(-5, -9, 8, 2);
+        } else if (direction === "up") {
+          // Back of blue hair
+          ctx.fillStyle = "#2563eb";
+          ctx.fillRect(-5, -9, 10, 7);
+          // Headband tie node
+          ctx.fillStyle = "#ff006e";
+          ctx.fillRect(-2, -6, 4, 2);
+        }
       }
 
       ctx.restore();

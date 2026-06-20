@@ -1,0 +1,11 @@
+{
+  "id": "palette-void-watcher",
+  "name": "Void Watcher",
+  "colors": {
+    "primary": "#0f172a",
+    "secondary": "#581c87",
+    "accent": "#a855f7",
+    "skin": "#e2e8f0",
+    "hair": "#3b0764"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "palette-dawn-pilgrim",
+  "name": "Dawn Pilgrim",
+  "colors": {
+    "primary": "#ec4899",
+    "secondary": "#fff7ed",
+    "accent": "#facc15",
+    "skin": "#fed7aa",
+    "hair": "#f472b6"
+  }
+}

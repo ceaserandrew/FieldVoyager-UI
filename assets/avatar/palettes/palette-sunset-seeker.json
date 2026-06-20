@@ -1,0 +1,11 @@
+{
+  "id": "palette-sunset-seeker",
+  "name": "Sunset Seeker",
+  "colors": {
+    "primary": "#ea580c",
+    "secondary": "#ca8a04",
+    "accent": "#f59e0b",
+    "skin": "#ffedd5",
+    "hair": "#7c2d12"
+  }
+}

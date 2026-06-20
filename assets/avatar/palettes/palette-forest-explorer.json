@@ -1,0 +1,11 @@
+{
+  "id": "palette-forest-explorer",
+  "name": "Forest Explorer",
+  "colors": {
+    "primary": "#15803d",
+    "secondary": "#78350f",
+    "accent": "#f59e0b",
+    "skin": "#fed7aa",
+    "hair": "#451a03"
+  }
+}

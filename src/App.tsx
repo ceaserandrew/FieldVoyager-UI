@@ -6,6 +6,8 @@ import { DialoguePanel } from "./components/DialoguePanel";
 import { StatsOverlays } from "./components/StatsOverlays";
 import { motion, AnimatePresence } from "motion/react";
 import { Flame, Compass, Star, HelpCircle, Book, Award, Check } from "lucide-react";
+import { AvatarConfig, DEFAULT_AVATAR_CONFIG } from "./utils/avatarDrawer";
+import { AvatarCustomizer } from "./components/AvatarCustomizer";
 
 export default function App() {
   // Coordinates in the central tranquil ocean between the continents
@@ -16,6 +18,10 @@ export default function App() {
   
   // Codex / Details modal node state
   const [examineNode, setExamineNode] = useState<LandmarkNode | null>(null);
+
+  // Avatar customizer system
+  const [avatarConfig, setAvatarConfig] = useState<AvatarConfig>(DEFAULT_AVATAR_CONFIG);
+  const [showCustomizer, setShowCustomizer] = useState<boolean>(false);
 
   // Gamified Player Stats State
   const [stats, setStats] = useState<PlayerStats>({
@@ -57,6 +63,15 @@ export default function App() {
     if (savedStats) {
       try {
         setStats(JSON.parse(savedStats));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    const savedAvatar = localStorage.getItem("fv_avatar_config");
+    if (savedAvatar) {
+      try {
+        setAvatarConfig(JSON.parse(savedAvatar));
       } catch (e) {
         console.error(e);
       }
@@ -180,31 +195,37 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col antialiased select-none selection:bg-indigo-500/30">
-      {/* 1. TOP HEADER OVERVIEW BAR */}
-      <header className="bg-slate-900 border-b border-slate-800 py-3.5 px-6 flex justify-between items-center relative z-30 shadow-md">
+    <div className="min-h-screen bg-[#f5ebd0] text-[#3c2f2f] flex flex-col antialiased select-none selection:bg-[#7c2d12]/20">
+      {/* 1. TOP HEADER OVERVIEW BAR - Elegant Timber Board look */}
+      <header className="bg-[#7c2d12] border-b-8 border-[#5e1e07] py-4 px-6 flex justify-between items-center relative z-30 shadow-md">
         <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center">
-            <Compass className="w-5 h-5 text-indigo-400 rotate-12" />
+          <div className="w-9 h-9 rounded-lg bg-[#fdf6e2] border-2 border-amber-900 flex items-center justify-center shadow-md">
+            <Compass className="w-5 h-5 text-[#7c2d12] rotate-12" />
           </div>
-          <div>
-            <span className="font-sans font-black tracking-widest text-[#facc15] text-base">FIELDVOYAGER</span>
-            <span className="font-mono text-[9px] bg-slate-950 border border-slate-800 text-indigo-400 px-1.5 py-0.5 rounded ml-2 uppercase">
-              UI Prototype
+          <div className="flex flex-col md:flex-row md:items-center">
+            <span className="font-sans font-black tracking-widest text-yellow-300 text-lg md:text-xl drop-shadow-[0_2px_2px_rgba(0,0,0,0.5)]">FIELDVOYAGER</span>
+            <span className="font-mono text-[9px] bg-amber-950/60 border border-amber-800/80 text-amber-100 font-extrabold px-1.5 py-0.5 rounded md:ml-3 uppercase tracking-wider w-fit mt-0.5 md:mt-0">
+              Cozy Pixel Engine
             </span>
           </div>
         </div>
 
-        <nav className="flex space-x-3">
+        <nav className="flex space-x-3.5">
+          <button
+            onClick={() => setShowCustomizer(true)}
+            className="text-xs bg-emerald-700 hover:bg-emerald-600 hover:scale-105 active:scale-95 text-white font-black py-1.5 px-3.5 rounded-lg border-2 border-emerald-900 cursor-pointer transition-transform shadow flex items-center space-x-1"
+          >
+            <span>🎨 Customize Avatar</span>
+          </button>
           <button
             onClick={() => setShowWelcome(true)}
-            className="text-xs bg-slate-800/80 border border-slate-700/60 hover:bg-slate-700 hover:text-white text-slate-300 font-mono py-1 px-3 rounded-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+            className="text-xs bg-[#fdf6e2] border-2 border-amber-900/80 hover:bg-amber-100 text-[#7c2d12] font-black py-1.5 px-3.5 rounded-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer shadow-sm"
           >
-            Guide List
+            Quest Guide
           </button>
           <button
             onClick={handleResetProgress}
-            className="text-xs bg-rose-950/40 border border-rose-900/60 hover:bg-rose-900 hover:text-white text-rose-300 font-mono py-1 px-3 rounded-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+            className="text-xs bg-red-850 hover:bg-red-800 text-rose-100 font-black py-1.5 px-3.5 rounded-lg border-2 border-red-950 transition-transform hover:scale-105 active:scale-95 cursor-pointer shadow-sm bg-[#9a3412]"
             title="Reset Game Sandbox"
           >
             Reset
@@ -215,33 +236,33 @@ export default function App() {
       {/* 2. CORE PLAYABLE MAIN PANEL CONTAINER */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-6 flex flex-col space-y-5">
         
-        {/* Dynamic Instructional Welcome Card */}
+        {/* Dynamic Instructional Welcome Card - Cozy Parchment Scroll theme */}
         <AnimatePresence>
           {showWelcome && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="bg-slate-900 border-l-4 border-[#3a86c8] p-4.5 rounded-xl text-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden font-mono shadow"
+              className="bg-[#fef9c3] border-l-8 border-[#7c2d12] border-t border-r border-b border-[#7c2d12]/30 p-5 rounded-xl text-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden font-mono shadow-md"
             >
               <div className="space-y-1.5 max-w-4xl z-10 relative">
-                <h2 className="text-yellow-400 font-black tracking-wider uppercase text-sm">
-                  Welcome, Voyager! Explore Academic Continents
+                <h2 className="text-[#7c2d12] font-black tracking-wider uppercase text-sm flex items-center gap-1.5">
+                  🌻 Welcome, Voyager! Explore Academic Continents
                 </h2>
-                <p className="text-slate-300 leading-relaxed text-[11px]">
+                <p className="text-amber-950 leading-relaxed text-[11px] font-semibold">
                   You are steering an avatar across islands of human knowledge. Click anywhere on the map grid to move.
-                  Walk near high spots (glowing landmarks) to challenge the Socratic AI on key theories.
-                  Correct deliberation awards you XP, levels you up, and permanently lights up that landmark on your grid.
+                  Walk near active glowing landmarks to challenge Socrates' socratic dialogue.
+                  Correct responses award you XP, level up your rank, and permanently master that landmark.
                 </p>
-                <div className="flex gap-4 pt-1 font-mono text-[10.5px] text-[#3a86c8]">
-                  <span>💜 West: Logic & Math Plains</span>
-                  <span>💚 East: Economics Valleys</span>
-                  <span>💙 South: Philosophy Peaks</span>
+                <div className="flex flex-wrap gap-4 pt-1 font-mono text-[10.5px] font-bold text-[#713f12]">
+                  <span>🔮 West: Logic & Math Plains</span>
+                  <span>🌽 East: Economics Valleys</span>
+                  <span>🏛️ South: Philosophy Peaks</span>
                 </div>
               </div>
               <button
                 onClick={() => setShowWelcome(false)}
-                className="bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs py-1 px-3 rounded-lg cursor-pointer shrink-0 border border-slate-700/65"
+                className="bg-[#7c2d12] hover:bg-[#9a3412] active:bg-amber-950 text-white font-black text-xs py-1.5 px-4 rounded-lg border-2 border-[#5e1e07] cursor-pointer shrink-0 shadow transition-all hover:scale-105"
               >
                 Got it
               </button>
@@ -260,6 +281,7 @@ export default function App() {
             activeNodeId={activeDialogueNode?.id || null}
             onNearNode={(node) => setActiveDialogueNode(node)}
             isDialogueOpen={activeDialogueNode !== null}
+            avatarConfig={avatarConfig}
           />
 
           {/* Dialogue card overlay (slides up nicely) */}
@@ -293,67 +315,67 @@ export default function App() {
       {/* Socratic Codex Examiner Modal */}
       <AnimatePresence>
         {examineNode && (
-          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 font-mono">
+          <div className="fixed inset-0 bg-[#3c2f2f]/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 font-mono">
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-slate-900 border-2 border-slate-700 max-w-lg w-full rounded-xl overflow-hidden shadow-2xl flex flex-col"
+              className="bg-[#fdf6e2] border-4 border-[#7c2d12] max-w-lg w-full rounded-xl overflow-hidden shadow-2xl flex flex-col text-[#3c2f2f]"
             >
               {/* Header */}
-              <div className="bg-slate-950 border-b border-slate-800 p-4 flex justify-between items-center">
-                <span className="text-amber-400 text-xs font-bold uppercase tracking-wider">
-                  Codex: {examineNode.discipline}
+              <div className="bg-[#7c2d12] border-b-2 border-amber-950 p-4 flex justify-between items-center text-amber-100">
+                <span className="text-yellow-300 text-xs font-black uppercase tracking-wider">
+                  📖 Codex: {examineNode.discipline}
                 </span>
                 <button
                   onClick={() => setExamineNode(null)}
-                  className="text-slate-400 hover:text-white cursor-pointer"
+                  className="text-amber-200 hover:text-white hover:scale-110 cursor-pointer transition-all bg-amber-950/40 p-1 rounded-full border border-amber-900/30"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
               {/* Body */}
-              <div className="p-5 space-y-4 text-xs">
+              <div className="p-5 space-y-4 text-xs bg-[#faf1da]">
                 <div>
-                  <h3 className="text-sm font-black text-white">{examineNode.name}</h3>
-                  <span className="text-indigo-400 uppercase text-[10px] tracking-widest mt-1 block">
-                    {solvedNodeIds.includes(examineNode.id) ? "● MASTERED" : "○ UNCONQUERED"}
+                  <h3 className="text-sm font-black text-[#7c2d12]">{examineNode.name}</h3>
+                  <span className={`uppercase text-[10px] tracking-widest mt-1 block font-black ${solvedNodeIds.includes(examineNode.id) ? "text-emerald-700" : "text-amber-700"}`}>
+                    {solvedNodeIds.includes(examineNode.id) ? "✦ MASTERED" : "○ UNCONQUERED"}
                   </span>
                 </div>
 
-                <div className="h-px bg-slate-800" />
+                <div className="h-0.5 bg-[#7c2d12]/15" />
 
                 <div className="space-y-1">
-                  <span className="text-[10px] text-slate-500 block uppercase">Theoretical Registry:</span>
-                  <p className="text-slate-300 leading-relaxed text-[11px]">{examineNode.details}</p>
+                  <span className="text-[10px] text-[#7c2d12]/65 block font-black uppercase">Theoretical Registry:</span>
+                  <p className="text-[#3c2f2f] leading-relaxed text-[11px] font-semibold bg-[#fffbeb] p-3 rounded-lg border border-[#7c2d12]/10">{examineNode.details}</p>
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[10px] text-slate-500 block uppercase">Thematic Obstacle:</span>
-                  <p className="text-slate-300 italic text-[11px]">"{examineNode.hint}"</p>
+                  <span className="text-[10px] text-[#7c2d12]/65 block font-black uppercase">Thematic Obstacle:</span>
+                  <p className="text-[#3c2f2f] italic text-[11px] font-bold bg-[#eedba5]/30 p-2.5 rounded-lg border border-[#7c2d12]/5">"{examineNode.hint}"</p>
                 </div>
 
-                <div className="bg-slate-950 p-3 rounded border border-slate-850 flex items-center justify-between">
-                  <span className="text-slate-400">Map coordinate:</span>
-                  <span className="text-indigo-300 text-[10.5px]">X: {examineNode.x} | Y: {examineNode.y}</span>
+                <div className="bg-[#eedba5]/40 p-3 rounded-lg border border-[#7c2d12]/15 flex items-center justify-between font-bold text-[10.5px]">
+                  <span className="text-[#713f12]">Map coordinate:</span>
+                  <span className="text-[#7c2d12]">X: {examineNode.x} | Y: {examineNode.y}</span>
                 </div>
               </div>
 
               {/* Footer */}
-              <div className="bg-slate-950 p-4 border-t border-slate-800 flex justify-end space-x-2.5">
+              <div className="bg-[#eedba5] p-4 border-t-2 border-[#7c2d12]/20 flex justify-end space-x-2.5">
                 <button
                   onClick={() => {
                     handleTeleport({ x: examineNode.x, y: examineNode.y });
                     setExamineNode(null);
                   }}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2 rounded transition-colors cursor-pointer"
+                  className="bg-[#7c2d12] hover:bg-[#9a3412] active:bg-amber-950 text-white font-black text-xs px-4 py-2 rounded-lg border-2 border-amber-950 transition-all cursor-pointer shadow hover:scale-103"
                 >
                   Teleport Avatar Here
                 </button>
                 <button
                   onClick={() => setExamineNode(null)}
-                  className="bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs px-4 py-2 rounded cursor-pointer"
+                  className="bg-[#fdf6e2] hover:bg-amber-100 text-[#7c2d12] font-black text-xs px-4 py-2 rounded-lg border-2 border-amber-900/60 cursor-pointer shadow"
                 >
                   Close
                 </button>
@@ -363,32 +385,29 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Level Up Celebration Toast Modal */}
+      {/* Level Up Celebration Toast Modal - Harvest Wood & Gold banner */}
       <AnimatePresence>
         {levelUpMessage && (
-          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 font-mono">
+          <div className="fixed inset-0 bg-[#3c2f2f]/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 font-mono">
             <motion.div
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.8, opacity: 0 }}
-              className="bg-gradient-to-b from-slate-900 to-indigo-950 border-2 border-yellow-500 rounded-2xl max-w-md w-full p-6 text-center shadow-2xl relative overflow-hidden"
+              className="bg-[#faf1da] border-8 border-amber-500/80 rounded-2xl max-w-md w-full p-6 text-center shadow-2xl relative overflow-hidden"
             >
-              {/* Star sparkles */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -z-10 opacity-10 scale-[2.5]" />
+              <Award className="w-16 h-16 text-amber-600 mx-auto animate-bounce mb-3" />
+              <h2 className="text-xl font-black text-[#5e1e07] tracking-widest uppercase">✨ RANK UP! ✨</h2>
+              <div className="text-[10px] text-[#713f12] font-extrabold uppercase tracking-widest mt-1">Learner Level Increased!</div>
               
-              <Award className="w-16 h-16 text-yellow-400 mx-auto animate-bounce mb-3" />
-              <h2 className="text-xl font-black text-yellow-400 tracking-widest uppercase">LEVEL INCREASED!</h2>
-              <div className="text-[10px] text-[#ffbe0b] uppercase tracking-widest mt-1">Voyager Level-Up Triumphant</div>
-              
-              <p className="text-slate-300 text-xs leading-relaxed mt-4 bg-slate-950/60 p-3 rounded border border-indigo-950/60">
+              <p className="text-amber-950 text-xs font-bold leading-relaxed mt-4 bg-[#fdf6e2] p-4 rounded-xl border-2 border-[#7c2d12]/20">
                 {levelUpMessage}
               </p>
 
               <button
                 onClick={() => setLevelUpMessage(null)}
-                className="mt-5 w-full bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-black text-xs py-2.5 rounded-lg shadow-lg cursor-pointer transition-transform hover:scale-103"
+                className="mt-5 w-full bg-[#7c2d12] hover:bg-[#9a3412] active:bg-amber-950 text-white font-black text-xs py-2.5 rounded-lg border-2 border-amber-950 shadow-md cursor-pointer transition-transform hover:scale-103"
               >
-                PROCEED VOYAGER
+                PROCEED ON VOYAGE
               </button>
             </motion.div>
           </div>
@@ -398,29 +417,29 @@ export default function App() {
       {/* Meditation / Rest Dialog Splash banner */}
       <AnimatePresence>
         {showMeditationAlert && (
-          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 font-mono">
+          <div className="fixed inset-0 bg-[#3c2f2f]/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 font-mono">
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              className="bg-slate-900 border-2 border-slate-700/80 max-w-md w-full p-6 rounded-2xl text-center shadow-2xl flex flex-col items-center"
+              className="bg-[#fdf6e2] border-4 border-[#7c2d12] max-w-md w-full p-6 rounded-2xl text-center shadow-2xl flex flex-col items-center text-[#3c2f2f]"
             >
-              <div className="w-12 h-12 bg-indigo-950 rounded-full flex items-center justify-center border border-indigo-500/30 mb-4 animate-spin-slow">
-                <Flame className="w-6 h-6 text-indigo-400 fill-indigo-400" />
+              <div className="w-12 h-12 bg-[#eedba5] rounded-full flex items-center justify-center border-2 border-[#7c2d12] mb-4">
+                <Flame className="w-6 h-6 text-red-600 fill-red-600 animate-pulse" />
               </div>
-              <h3 className="text-[#60a5fa] text-sm font-black uppercase tracking-wider">Tranquil Meditation Completed</h3>
+              <h3 className="text-[#7c2d12] text-sm font-black uppercase tracking-wider">Tranquil Meditation Completed</h3>
               
-              <p className="text-slate-300 text-xs italic leading-relaxed mt-4 bg-slate-950 p-4 rounded border border-slate-850 max-w-sm">
+              <p className="text-amber-900 text-xs italic font-bold leading-relaxed mt-4 bg-[#faf1da] p-4 rounded-xl border border-[#7c2d12]/15 max-w-sm">
                 "{currentQuote}"
               </p>
               
-              <div className="text-[10px] text-emerald-400 mt-3 font-bold">
-                +40 THOUGHT ENERGY SECURED (RESTING MINDS FLOURISH)
+              <div className="text-[10px] text-emerald-800 mt-3 font-extrabold bg-emerald-100 px-3 py-1 rounded border border-emerald-500/20">
+                🌱 +40 THOUGHT ENERGY REPLENISHED (RESTING MINDS FLOURISH)
               </div>
 
               <button
                 onClick={() => setShowMeditationAlert(false)}
-                className="mt-5 w-full bg-slate-800 hover:bg-slate-750 text-white font-bold text-xs py-2.5 rounded-lg cursor-pointer transition-colors"
+                className="mt-5 w-full bg-[#7c2d12] hover:bg-[#9a3412] text-white font-black text-xs py-2.5 rounded-lg border-2 border-amber-950 cursor-pointer transition-colors shadow"
               >
                 Return to Overworld
               </button>
@@ -429,9 +448,24 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* 4. Humbler Footer credits */}
-      <footer className="bg-slate-950 border-t border-slate-900 py-3.5 text-center text-[10px] text-slate-600 font-mono">
-        FieldVoyager overworld simulator. Responsive HTML5 Canvas game loops. Crafted with Socratic Sincerity.
+      {/* 5. Custom paper doll avatar customizer modal */}
+      <AnimatePresence>
+        {showCustomizer && (
+          <AvatarCustomizer
+            currentConfig={avatarConfig}
+            onClose={() => setShowCustomizer(false)}
+            onSave={(newVal) => {
+              setAvatarConfig(newVal);
+              localStorage.setItem("fv_avatar_config", JSON.stringify(newVal));
+              setShowCustomizer(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* 4. Humbler Footer credits - Shelved Wooden Plate */}
+      <footer className="bg-[#7c2d12] border-t-4 border-[#5e1e07] py-4 text-center text-[10.5px] text-amber-100 font-mono font-bold">
+        🌿 FieldVoyager Overworld Simulator © 2026. Made with Socratic Sincerity. Click to explore & learn!
       </footer>
     </div>
   );

@@ -1,0 +1,11 @@
+{
+  "id": "palette-frost-mage",
+  "name": "Frost Mage",
+  "colors": {
+    "primary": "#2563eb",
+    "secondary": "#f1f5f9",
+    "accent": "#38bdf8",
+    "skin": "#eff6ff",
+    "hair": "#93c5fd"
+  }
+}

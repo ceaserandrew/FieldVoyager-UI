@@ -1,0 +1,11 @@
+{
+  "id": "palette-ocean-scholar",
+  "name": "Ocean Scholar",
+  "colors": {
+    "primary": "#1e40af",
+    "secondary": "#f8fafc",
+    "accent": "#fbbf24",
+    "skin": "#fde047",
+    "hair": "#1d4ed8"
+  }
+}
