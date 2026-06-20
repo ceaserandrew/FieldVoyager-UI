@@ -180,22 +180,22 @@ export const DialoguePanel: React.FC<DialoguePanelProps> = ({
       animate={{ y: 0, opacity: 1 }}
       exit={{ y: 350, opacity: 0 }}
       transition={{ duration: 0.35, ease: "easeOut" }}
-      className="absolute bottom-0 inset-x-0 bg-slate-900 border-t-4 border-amber-600 shadow-2xl z-20 flex flex-col h-[280px] font-mono leading-relaxed overflow-hidden"
+      className="absolute bottom-0 inset-x-0 bg-[#fdf6e2] border-t-8 border-x-4 border-b-4 border-[#7c2d12] shadow-2xl z-20 flex flex-col h-[290px] font-mono leading-relaxed overflow-hidden rounded-t-xl"
     >
-      {/* Dialogue Header */}
-      <div className="bg-slate-950 border-b border-slate-800 px-4 py-2 flex justify-between items-center select-none text-xs">
-        <div className="flex items-center space-x-2 text-amber-500">
-          <BookOpen className="w-4 h-4 animate-pulse" />
-          <span className="font-bold tracking-wider">SOCRATIC LANDMARK: {node.name} ({node.discipline})</span>
+      {/* Dialogue Header - Wooden Timber Board Style */}
+      <div className="bg-[#7c2d12] border-b border-[#5e1e07] px-4 py-2.5 flex justify-between items-center select-none text-xs">
+        <div className="flex items-center space-x-2 text-yellow-300">
+          <BookOpen className="w-4 h-4 animate-bounce" />
+          <span className="font-extrabold tracking-wider uppercase">SOCRATIC QUEST: {node.name}</span>
         </div>
-        <div className="flex items-center space-x-3 text-slate-400">
-          <div className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            <span>{isOnlineMode ? "Gemini AI Live" : "Offline Sandbox Fallback"}</span>
+        <div className="flex items-center space-x-3 text-amber-100">
+          <div className="flex items-center gap-1.5 bg-amber-950/40 px-2 py-0.5 rounded border border-amber-900/30">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            <span className="text-[10px] font-bold">{isOnlineMode ? "Gemini AI" : "Local Sandbox Mode"}</span>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white transition-colors cursor-pointer"
+            className="text-amber-200 hover:text-white hover:scale-110 transition-all cursor-pointer bg-[#9a3412] p-0.5 rounded-full"
             title="Close dialogue"
           >
             <X className="w-4 h-4" />
@@ -205,40 +205,40 @@ export const DialoguePanel: React.FC<DialoguePanelProps> = ({
 
       {/* Body section Split (Left Details / Right Conversation Scroll) */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Hand: Landmark Codex Details (Desktop only, responsive hidden on tiny screens) */}
-        <div className="hidden md:flex flex-col w-1/4 bg-slate-950/80 border-r border-slate-800 p-3 select-none text-xs text-slate-400 space-y-2.5 overflow-y-auto">
-          <div className="flex items-center space-x-1.5 text-slate-300 border-b border-slate-800 pb-1.5 font-bold">
-            <Compass className="w-4 h-4 text-slate-400" />
-            <span>EXAMINING LANDMARK</span>
+        {/* Left Hand: Landmark Codex Details (Desktop only, warm timber parchment) */}
+        <div className="hidden md:flex flex-col w-1/4 bg-[#eedba5]/80 border-r-2 border-[#7c2d12]/30 p-3.5 select-none text-xs text-[#3c2f2f] space-y-2 overflow-y-auto">
+          <div className="flex items-center space-x-1.5 text-[#5c1d07] border-b-2 border-[#7c2d12]/20 pb-1.5 font-bold">
+            <Compass className="w-4 h-4" />
+            <span className="font-black text-[11px] uppercase tracking-wider">Landmark Info</span>
           </div>
           <div>
-            <span className="text-amber-500/90 font-bold block">Landmark Codex:</span>
-            <p className="mt-1 text-slate-300 leading-normal text-[11px] bg-slate-900/60 p-2 border border-slate-900 rounded select-text">
+            <span className="text-[#9a3412] font-black block">Description:</span>
+            <p className="mt-1 text-[#451a03] leading-normal text-[10.5px] bg-[#fdf6e2]/80 p-2.5 border border-[#7c2d12]/20 rounded-lg select-text">
               {node.details}
             </p>
           </div>
           <div>
-            <span className="text-indigo-400 font-bold block">Philosophical Quest:</span>
-            <span className="text-slate-300 block italic leading-normal text-[11px] mt-0.5">
+            <span className="text-[#1e3a8a] font-black block">Hint:</span>
+            <span className="text-[#3c2f2f] font-bold block italic leading-normal text-[10.5px] mt-0.5">
               "{node.hint}"
             </span>
           </div>
           {isMastered && (
-            <div className="mt-auto bg-emerald-950/40 p-2 border border-emerald-900 rounded text-emerald-400 text-[10px] flex gap-1.5 items-center">
-              <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
-              <span>Landmark mastered successfully! Permanent flame added to grid.</span>
+            <div className="mt-auto bg-emerald-100 p-2 border border-emerald-600 rounded-lg text-emerald-800 text-[10px] flex gap-1.5 items-center font-bold">
+              <CheckCircle className="w-4 h-4 shrink-0 text-emerald-700 font-bold" />
+              <span>Integrated! Landmark mastered permanently.</span>
             </div>
           )}
         </div>
 
         {/* Right Hand: Active Chat Board */}
-        <div className="flex-1 flex flex-col bg-slate-900 relative">
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 flex flex-col bg-[#faf1da] relative">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3.5">
             {messages.map((message) => {
               if (message.sender === "system") {
                 return (
-                  <div key={message.id} className="text-center text-[10px] text-slate-500 tracking-wider">
-                    --- {message.text} ---
+                  <div key={message.id} className="text-center text-[10px] text-[#7c2d12]/60 font-bold tracking-widest uppercase">
+                    === {message.text} ===
                   </div>
                 );
               }
@@ -250,15 +250,17 @@ export const DialoguePanel: React.FC<DialoguePanelProps> = ({
                   className={`flex ${isSocrates ? "justify-start" : "justify-end"}`}
                 >
                   <div
-                    className={`max-w-[85%] rounded p-2.5 text-xs border ${
+                    className={`max-w-[85%] rounded-lg p-3 text-xs border-2 shadow-sm ${
                       isSocrates
-                        ? "bg-slate-950/50 border-amber-900/50 text-amber-200"
-                        : "bg-indigo-950/65 border-indigo-900 text-slate-200"
+                        ? "bg-[#fffbeb] border-[#d97706]/35 text-[#451a03]"
+                        : "bg-white border-[#1e3a8a]/20 text-[#1e1b4b]"
                     }`}
                   >
-                    <div className="flex justify-between items-center text-[9px] text-slate-500 mb-1 select-none font-bold">
-                      <span>{isSocrates ? "SOCRATES" : "VOYAGER TRAVELER"}</span>
-                      <span>
+                    <div className="flex justify-between items-center text-[9px] text-slate-500 mb-1 select-none font-bold gap-3 pb-1 border-b border-[#7c2d12]/10">
+                      <span className={isSocrates ? "text-[#9a3412] font-black" : "text-[#1e3a8a] font-black"}>
+                        {isSocrates ? "SOCRATES" : "VOYAGER TRAVELER"}
+                      </span>
+                      <span className="text-slate-400">
                         {new Date(message.timestamp).toLocaleTimeString([], {
                           hour: "2-digit",
                           minute: "2-digit",
@@ -266,7 +268,7 @@ export const DialoguePanel: React.FC<DialoguePanelProps> = ({
                         })}
                       </span>
                     </div>
-                    <p className="whitespace-pre-line leading-relaxed text-[11px]">{message.text}</p>
+                    <p className="whitespace-pre-line leading-relaxed text-[11px] font-bold">{message.text}</p>
                   </div>
                 </div>
               );
@@ -275,17 +277,17 @@ export const DialoguePanel: React.FC<DialoguePanelProps> = ({
             {/* Socratic reflective contemplation Loader */}
             {isLoading && (
               <div className="flex justify-start">
-                <div className="bg-slate-950/40 border border-slate-800 text-amber-300/80 rounded p-2.5 max-w-[85%] flex items-center space-x-2.5 text-xs animate-pulse">
-                  <Flame className="w-4 h-4 text-amber-500 animate-spin" />
-                  <span>Socrates is contemplating your premises...</span>
+                <div className="bg-[#fffbeb] border-2 border-[#d97706]/20 text-[#9a3412] rounded-lg p-2.5 max-w-[85%] flex items-center space-x-2.5 text-xs animate-pulse font-bold">
+                  <Flame className="w-4 h-4 text-orange-500 animate-bounce" />
+                  <span>Socrates is reflecting on your thoughts...</span>
                 </div>
               </div>
             )}
 
             {isError && (
-              <div className="bg-rose-950/30 border border-rose-900/50 p-2.5 rounded text-rose-400 text-xs flex gap-2 items-center">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-                <span>Philosophical dialogue interrupted. Reconnecting sandbox channels...</span>
+              <div className="bg-[#fee2e2] border-2 border-[#ef4444]/30 p-2.5 rounded-lg text-red-800 text-xs flex gap-2 items-center font-bold">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                <span>Interrupted. Reconnecting local pathways...</span>
               </div>
             )}
 
@@ -293,19 +295,19 @@ export const DialoguePanel: React.FC<DialoguePanelProps> = ({
           </div>
 
           {/* dialogue typing input bar */}
-          <div className="p-3 bg-slate-950/90 border-t border-slate-800 select-none">
+          <div className="p-3 bg-[#eedba5]/80 border-t-2 border-[#7c2d12]/40 select-none">
             {isMastered ? (
               <div className="flex justify-between items-center gap-2">
-                <div className="flex items-center space-x-2 text-emerald-400 text-xs font-bold">
-                  <CheckCircle className="w-5 h-5 animate-bounce" />
-                  <span>PREMISE INTEGRATED & LANDMARK UNLOCKED (+120 XP)</span>
+                <div className="flex items-center space-x-2 text-emerald-800 text-[11px] font-black">
+                  <CheckCircle className="w-5 h-5 text-emerald-700 animate-bounce" />
+                  <span>PREMISE UNLOCKED! Permanent Node Mastered (+120 XP)</span>
                 </div>
                 <button
                   type="button"
                   onClick={onClose}
-                  className="bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-slate-950 font-black text-xs px-4 py-1.5 rounded transition-transform cursor-pointer shadow-lg hover:scale-105"
+                  className="bg-[#7c2d12] hover:bg-[#9a3412] active:bg-amber-950 text-white font-black text-xs px-5 py-2 rounded-lg border-2 border-[#5e1e07] transition-all cursor-pointer shadow-md hover:scale-105"
                 >
-                  CONTINUE VOYAGE
+                  CONTINUE JOURNEY
                 </button>
               </div>
             ) : (
@@ -317,16 +319,16 @@ export const DialoguePanel: React.FC<DialoguePanelProps> = ({
                   disabled={isLoading}
                   placeholder={
                     currentEnergy <= 0
-                      ? "Low Thought Energy! Recharge required..."
-                      : "Reflect onocrates' question and type your thoughts..."
+                      ? "Depleted Energy! Regenerate or rest..."
+                      : "Contemplate and formulate your philosophical response..."
                   }
-                  className="flex-1 bg-slate-900 border border-slate-700 text-slate-200 text-xs px-3 py-2 rounded focus:outline-none focus:border-amber-500 disabled:opacity-50 placeholder-slate-500"
+                  className="flex-1 bg-white border-2 border-[#7c2d12]/30 text-[#3c2f2f] text-xs px-3 py-2 rounded-lg focus:outline-none focus:border-[#7c2d12] disabled:opacity-50 placeholder-slate-400 font-bold"
                   maxLength={500}
                 />
                 <button
                   type="submit"
                   disabled={isLoading || !inputValue.trim() || currentEnergy <= 0}
-                  className="bg-amber-600 text-slate-950 font-black px-4.5 py-1.5 rounded text-xs flex items-center space-x-1.5 hover:bg-amber-500 active:bg-amber-700 transition-all disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer shrink-0 shadow-md"
+                  className="bg-[#7c2d12] hover:bg-[#9a3412] disabled:bg-slate-400 text-white font-black px-4.5 py-1.5 rounded-lg text-xs flex items-center space-x-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0 shadow-md border border-[#5e1e07]"
                 >
                   <span>REFLECT</span>
                   <Send className="w-3.5 h-3.5" />
