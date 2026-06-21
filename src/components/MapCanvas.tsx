@@ -1,13 +1,14 @@
 import React, { useRef, useEffect, useState, useMemo } from "react";
-import { LandmarkNode, Position } from "../types";
+import { LandmarkNode, Position, ScholarCottage, CollectibleChest } from "../types";
 import { LANDMARKS } from "../landmarksData";
 import { AvatarConfig, drawCompositedAvatar } from "../utils/avatarDrawer";
 import {
   getMetaAssets,
   generateTileMap,
   drawTileBackground,
+  getElevation,
 } from "../utils/metaAssets";
-import { Compass, ZoomIn, ZoomOut, Maximize, Loader } from "lucide-react";
+import { Compass, ZoomIn, ZoomOut, Maximize, Loader, Gift, Key, Sparkles } from "lucide-react";
 
 interface MapCanvasProps {
   avatarPos: Position;
@@ -19,6 +20,11 @@ interface MapCanvasProps {
   onNearNode: (node: LandmarkNode) => void;
   isDialogueOpen: boolean;
   avatarConfig?: AvatarConfig;
+  cottages: ScholarCottage[];
+  chests: CollectibleChest[];
+  onNearCottage: (cottage: ScholarCottage | null) => void;
+  activeCottageId: string | null;
+  onOpenChest: (chestId: string) => void;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -31,6 +37,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onNearNode,
   isDialogueOpen,
   avatarConfig,
+  cottages,
+  chests,
+  onNearCottage,
+  activeCottageId,
+  onOpenChest,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -64,6 +75,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [tick, setTick] = useState<number>(0);
   const [timeOfDay, setTimeOfDay] = useState<"Morning" | "Noon" | "Sunset" | "Night">("Noon");
 
+  const [nearCottage, setNearCottage] = useState<ScholarCottage | null>(null);
+  const [nearChest, setNearChest] = useState<CollectibleChest | null>(null);
+
   // Mouse Drag / Free Pan trackers
   const isDraggingRef = useRef<boolean>(false);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -82,6 +96,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     targetRef.current = targetPos;
   }, [targetPos]);
 
+  const nearCottageRef = useRef<ScholarCottage | null>(null);
+  const nearChestRef = useRef<CollectibleChest | null>(null);
+
+  useEffect(() => {
+    nearCottageRef.current = nearCottage;
+  }, [nearCottage]);
+
+  useEffect(() => {
+    nearChestRef.current = nearChest;
+  }, [nearChest]);
+
   // Keyboard Navigation Events hook (WASD & Arrow Keys)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -89,8 +114,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         keysPressedRef.current = {};
         return;
       }
-      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", "Space"].includes(e.code)) {
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", "Space", "Enter"].includes(e.code)) {
         e.preventDefault();
+      }
+      if (e.code === "Space" || e.code === "Enter") {
+        if (nearCottageRef.current) {
+          onNearCottage(nearCottageRef.current);
+          return;
+        } else if (nearChestRef.current) {
+          onOpenChest(nearChestRef.current.id);
+          return;
+        }
       }
       keysPressedRef.current[e.code] = true;
     };
@@ -132,18 +166,35 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     };
   }, []);
 
-  // Calculate coordinates projection mapping screen <-> logical world
+  const prevNearCottageIdRef = useRef<string | null>(null);
+  const prevNearChestIdRef = useRef<string | null>(null);
+
+  // Calculate coordinates projection mapping screen <-> logical world in 45-degree isometric projection!
   const screenToWorld = (screenX: number, screenY: number): Position => {
+    const rx = (screenX - dimensions.width / 2) / zoom;
+    const ry = (screenY - dimensions.height / 2) / zoom;
+    
+    // Inverse of 45-degree angle project matrix:
+    const U = rx * 1.414214;
+    const V = ry * 2.828427;
+    
     return {
-      x: cameraRef.current.x + (screenX - dimensions.width / 2) / zoom,
-      y: cameraRef.current.y + (screenY - dimensions.height / 2) / zoom,
+      x: cameraRef.current.x + (U + V) * 0.5,
+      y: cameraRef.current.y + (V - U) * 0.5,
     };
   };
 
-  const worldToScreen = (worldX: number, worldY: number): Position => {
+  const worldToScreen = (worldX: number, worldY: number, elevation = 0): Position => {
+    const dx = worldX - cameraRef.current.x;
+    const dy = worldY - cameraRef.current.y;
+    
+    // 45-degree isometric projection formula:
+    const rx = (dx - dy) * 0.707107;
+    const ry = (dx + dy) * 0.353553 - elevation;
+    
     return {
-      x: (worldX - cameraRef.current.x) * zoom + dimensions.width / 2,
-      y: (worldY - cameraRef.current.y) * zoom + dimensions.height / 2,
+      x: dimensions.width / 2 + rx * zoom,
+      y: dimensions.height / 2 + ry * zoom,
     };
   };
 
@@ -252,7 +303,19 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const r = Math.floor(y / 32);
       if (c < 0 || c >= 100 || r < 0 || r >= 80) return false;
       const tile = mapMatrix[r][c];
-      return tile !== "deep_water" && tile !== "river_water";
+      if (tile === "deep_water" || tile === "river_water") return false;
+
+      // Cliffs elevation blocking check: prevent climbing straight vertical structures!
+      const curC = Math.floor(posRef.current.x / 32);
+      const curR = Math.floor(posRef.current.y / 32);
+      if (curC >= 0 && curC < 100 && curR >= 0 && curR < 80) {
+        const curElev = getElevation(curC, curR);
+        const targetElev = getElevation(c, r);
+        if (Math.abs(targetElev - curElev) > 16) {
+          return false; // too steep to walk up!
+        }
+      }
+      return true;
     };
 
     const checkWalkable = (x: number, y: number): boolean => {
@@ -423,6 +486,38 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         cameraRef.current.y += (posRef.current.y - cameraRef.current.y) * 0.08;
       }
 
+      // Proximity checks for cottages
+      let closestCottage: ScholarCottage | null = null;
+      let minCottageDist = 45;
+      for (const cottage of cottages) {
+        const d = Math.hypot(cottage.x - posRef.current.x, cottage.y - posRef.current.y);
+        if (d < minCottageDist) {
+          closestCottage = cottage;
+          minCottageDist = d;
+        }
+      }
+      if (prevNearCottageIdRef.current !== (closestCottage?.id || null)) {
+        prevNearCottageIdRef.current = closestCottage?.id || null;
+        setNearCottage(closestCottage);
+      }
+
+      // Proximity checks for chests
+      let closestChest: CollectibleChest | null = null;
+      let minChestDist = 36;
+      for (const chest of chests) {
+        if (!chest.opened) {
+          const d = Math.hypot(chest.x - posRef.current.x, chest.y - posRef.current.y);
+          if (d < minChestDist) {
+            closestChest = chest;
+            minChestDist = d;
+          }
+        }
+      }
+      if (prevNearChestIdRef.current !== (closestChest?.id || null)) {
+        prevNearChestIdRef.current = closestChest?.id || null;
+        setNearChest(closestChest);
+      }
+
       // Draw compiled objects onto screen
       draw();
 
@@ -443,43 +538,179 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const dpr = 1;
       ctx.scale(dpr, dpr);
 
-      // View culling coordinate thresholds
-      const halfW = dimensions.width / 2;
-      const halfH = dimensions.height / 2;
+      // Helper to convert pixels to grid cell heights
+      const getElevationPixel = (x: number, y: number): number => {
+        const c = Math.max(0, Math.min(99, Math.floor(x / 32)));
+        const r = Math.max(0, Math.min(79, Math.floor(y / 32)));
+        return getElevation(c, r);
+      };
 
-      const viewportLeft = cameraRef.current.x - halfW / zoom;
-      const viewportTop = cameraRef.current.y - halfH / zoom;
-      const viewportRight = cameraRef.current.x + halfW / zoom;
-      const viewportBottom = cameraRef.current.y + halfH / zoom;
+      // Decoupled clean viewport coordinates for visibility checking
+      const viewportLeft = cameraRef.current.x - (dimensions.width / 2) / zoom;
+      const viewportTop = cameraRef.current.y - (dimensions.height / 2) / zoom;
+      const viewportRight = cameraRef.current.x + (dimensions.width / 2) / zoom;
+      const viewportBottom = cameraRef.current.y + (dimensions.height / 2) / zoom;
 
-      // Spatial Visibility guard
+      // Spatial Visibility guard under isometric rendering checking
       const isVisible = (x: number, y: number, padding = 96) => {
+        const scr = worldToScreen(x, y, getElevationPixel(x, y));
         return (
-          x >= viewportLeft - padding &&
-          x <= viewportRight + padding &&
-          y >= viewportTop - padding &&
-          y <= viewportBottom + padding
+          scr.x >= -padding &&
+          scr.x <= dimensions.width + padding &&
+          scr.y >= -padding &&
+          scr.y <= dimensions.height + padding
         );
       };
 
       // ----------------------------------------------------
-      // START CAMERA PERSPECTIVE MATRIX TRANSFORMS
+      // START ISOMETRIC PROJECTIVE DRAWING LOOPS
       // ----------------------------------------------------
-      ctx.save();
-      ctx.translate(dimensions.width / 2, dimensions.height / 2);
-      ctx.scale(zoom, zoom);
-      ctx.translate(-cameraRef.current.x, -cameraRef.current.y);
 
-      // 1. DYNAMIC WATER BACKGROUND & SEWN MAP TILES
-      drawTileBackground(ctx, mapMatrix, viewportLeft, viewportTop, viewportRight, viewportBottom);
+      // 1. DYNAMIC WATER BACKGROUND & SEWN MAP TILES (WITH 3D ELEVATION HILLS!)
+      const viewRadius = Math.ceil(Math.max(dimensions.width, dimensions.height) / (32 * zoom)) + 4;
+      const camCol = Math.floor(cameraRef.current.x / 32);
+      const camRow = Math.floor(cameraRef.current.y / 32);
 
-      // Deep ocean foaming ripples
-      ctx.fillStyle = "rgba(255, 255, 255, 0.04)";
+      const startCol = Math.max(0, camCol - viewRadius);
+      const endCol = Math.min(99, camCol + viewRadius);
+      const startRow = Math.max(0, camRow - viewRadius);
+      const endRow = Math.min(79, camRow + viewRadius);
+
+      // Render the entire 3D tile overworld grid sorted row-by-row & col-by-col for depth ordering!
+      for (let r = startRow; r <= endRow; r++) {
+        for (let c = startCol; c <= endCol; c++) {
+          const type = mapMatrix[r][c];
+          const elev = getElevation(c, r);
+
+          // Get screen points of the 4 tile corners
+          const pTop = worldToScreen(c * 32, r * 32, elev);
+          const pLeft = worldToScreen(c * 32, (r + 1) * 32, elev);
+          const pRight = worldToScreen((c + 1) * 32, r * 32, elev);
+          const pBottom = worldToScreen((c + 1) * 32, (r + 1) * 32, elev);
+
+          // Skip if completely offscreen
+          const margin = 48;
+          if (
+            (pLeft.x < -margin && pRight.x < -margin && pTop.x < -margin && pBottom.x < -margin) ||
+            (pLeft.x > dimensions.width + margin && pRight.x > dimensions.width + margin && pTop.x > dimensions.width + margin && pBottom.x > dimensions.width + margin) ||
+            (pLeft.y < -margin && pRight.y < -margin && pTop.y < -margin && pBottom.y < -margin) ||
+            (pLeft.y > dimensions.height + margin && pRight.y > dimensions.height + margin && pTop.y > dimensions.height + margin && pBottom.y > dimensions.height + margin)
+          ) {
+            continue;
+          }
+
+          // Distinct materials color mapping
+          let topColor = "#0f172a";
+          let sideColor = "#020617";
+          switch (type) {
+            case "deep_water":
+              topColor = "#0f172a";
+              sideColor = "#020617";
+              break;
+            case "river_water":
+              topColor = "#0ea5e9"; // beautiful pristine blue river
+              sideColor = "#0284c7";
+              break;
+            case "sand":
+              topColor = "#fef08a"; // sunny soft beach sands
+              sideColor = "#eab308";
+              break;
+            case "cyber_grass":
+              topColor = "#4c1d95"; // cyber glow purple grass fields
+              sideColor = "#2e1065";
+              break;
+            case "agrarian_grass":
+              topColor = "#065f46"; // lush green pastures
+              sideColor = "#064e3b";
+              break;
+            case "slate_stone":
+              topColor = "#334155";
+              sideColor = "#1e293b";
+              break;
+            case "bridge":
+              topColor = "#78350f"; // beautiful handmilled rustic bridge logs
+              sideColor = "#451a03";
+              break;
+          }
+
+          // Draw ground top plane (diamond)
+          ctx.fillStyle = topColor;
+          ctx.beginPath();
+          ctx.moveTo(pTop.x, pTop.y);
+          ctx.lineTo(pRight.x, pRight.y);
+          ctx.lineTo(pBottom.x, pBottom.y);
+          ctx.lineTo(pLeft.x, pLeft.y);
+          ctx.closePath();
+          ctx.fill();
+
+          // Subtle grid lines to establish depth rhythm
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.02)";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          // Clip side vertical cliff-walls for 3D raised elevation!
+          const elevBelow = r + 1 < 80 ? getElevation(c, r + 1) : 0;
+          const elevRight = c + 1 < 100 ? getElevation(c + 1, r) : 0;
+
+          if (elev > elevBelow) {
+            const pLeftD = worldToScreen(c * 32, (r + 1) * 32, elevBelow);
+            const pBottomD = worldToScreen((c + 1) * 32, (r + 1) * 32, elevBelow);
+
+            ctx.fillStyle = sideColor;
+            ctx.beginPath();
+            ctx.moveTo(pLeft.x, pLeft.y);
+            ctx.lineTo(pBottom.x, pBottom.y);
+            ctx.lineTo(pBottomD.x, pBottomD.y);
+            ctx.lineTo(pLeftD.x, pLeftD.y);
+            ctx.closePath();
+            ctx.fill();
+
+            // Accent shaded lighting
+            ctx.fillStyle = "rgba(0, 0, 0, 0.12)";
+            ctx.beginPath();
+            ctx.moveTo(pLeft.x, pLeft.y);
+            ctx.lineTo(pBottom.x, pBottom.y);
+            ctx.lineTo(pBottomD.x, pBottomD.y);
+            ctx.lineTo(pLeftD.x, pLeftD.y);
+            ctx.closePath();
+            ctx.fill();
+          }
+
+          if (elev > elevRight) {
+            const pRightD = worldToScreen((c + 1) * 32, r * 32, elevRight);
+            const pBottomD = worldToScreen((c + 1) * 32, (r + 1) * 32, elevRight);
+
+            ctx.fillStyle = sideColor;
+            ctx.beginPath();
+            ctx.moveTo(pRight.x, pRight.y);
+            ctx.lineTo(pBottom.x, pBottom.y);
+            ctx.lineTo(pBottomD.x, pBottomD.y);
+            ctx.lineTo(pRightD.x, pRightD.y);
+            ctx.closePath();
+            ctx.fill();
+
+            // Stronger shadow overlay on the right faces
+            ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
+            ctx.beginPath();
+            ctx.moveTo(pRight.x, pRight.y);
+            ctx.lineTo(pBottom.x, pBottom.y);
+            ctx.lineTo(pBottomD.x, pBottomD.y);
+            ctx.lineTo(pRightD.x, pRightD.y);
+            ctx.closePath();
+            ctx.fill();
+          }
+        }
+      }
+
+      // Deep ocean foaming ripples projected onto isometric space
+      ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
       for (let x = Math.floor(viewportLeft / 192) * 192; x < viewportRight; x += 192) {
         for (let y = Math.floor(viewportTop / 192) * 192; y < viewportBottom; y += 192) {
           const shift = Math.floor(frameTick / 16) % 8;
-          ctx.fillRect(x + shift * 2.5, y + shift, 16, 1.5);
-          ctx.fillRect(x + shift * 2 + 32, y + shift + 24, 10, 1);
+          const p = worldToScreen(x + shift * 2.5, y + shift, 0);
+          if (p.x >= 0 && p.x <= dimensions.width && p.y >= 0 && p.y <= dimensions.height) {
+            ctx.fillRect(p.x, p.y, 16 * zoom, 1.5 * zoom);
+          }
         }
       }
 
@@ -502,10 +733,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
           if (!isVisible(rx, ry, 16)) continue;
 
+          const elev = getElevationPixel(rx, ry);
+          const scr = worldToScreen(rx, ry, elev);
+
           // Shadow under each cobblestone
           ctx.fillStyle = "rgba(12, 19, 36, 0.4)";
           ctx.beginPath();
-          ctx.arc(rx, ry + 1.2, 5.2, 0, Math.PI * 2);
+          ctx.arc(scr.x, scr.y + 1.2 * zoom, 5.2 * zoom, 0, Math.PI * 2);
           ctx.fill();
 
           // Smooth blending pebble color based on coordinate boundaries (regional theme matching)
@@ -517,17 +751,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             ctx.fillStyle = i % 2 === 0 ? "#5b21b6" : "#7c3aed";
           } else {
             // Eastern Economics pastures (Rustic brown gravel soil)
-            ctx.fillStyle = i % 2 === 0 ? "#7c2d12" : "#b45309";
+            ctx.fillStyle = i % 2 === 0 ? "#1e533b" : "#b45309";
           }
           
           ctx.beginPath();
-          ctx.arc(rx, ry, 4.2, 0, Math.PI * 2);
+          ctx.arc(scr.x, scr.y, 4.2 * zoom, 0, Math.PI * 2);
           ctx.fill();
 
           // Small shiny highlights
           if (i % 3 === 0) {
             ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
-            ctx.fillRect(rx - 1.5, ry - 1.5, 1.8, 1);
+            ctx.fillRect(scr.x - 1.5 * zoom, scr.y - 1.5 * zoom, 1.8 * zoom, 1 * zoom);
           }
         }
         ctx.restore();
@@ -539,18 +773,35 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       drawCobbleRoad(600, 750, 0, 0, 2550, 750, true); // Direct route crossings (Straight)
 
       // Golden sand trim guideline underneath to tie standard pathway aesthetics together
-      ctx.strokeStyle = "rgba(252, 211, 77, 0.25)";
-      ctx.lineWidth = 3;
-      ctx.setLineDash([6, 12]);
-      ctx.beginPath();
-      ctx.moveTo(600, 750);
-      ctx.quadraticCurveTo(800, 1400, 1600, 1950);
-      ctx.moveTo(2550, 750);
-      ctx.quadraticCurveTo(2300, 1450, 1600, 1950);
-      ctx.moveTo(600, 750);
-      ctx.lineTo(2550, 750);
-      ctx.stroke();
-      ctx.setLineDash([]); // Reset dash
+      const drawSandTrim = (x1: number, y1: number, cpX: number, cpY: number, x2: number, y2: number, isStraight = false) => {
+        const steps = isStraight ? 65 : 85;
+        ctx.strokeStyle = "rgba(252, 211, 77, 0.25)";
+        ctx.lineWidth = 3 * zoom;
+        ctx.setLineDash([6 * zoom, 12 * zoom]);
+        ctx.beginPath();
+        for (let i = 0; i <= steps; i++) {
+          const t = i / steps;
+          let rx = 0;
+          let ry = 0;
+          if (isStraight) {
+            rx = x1 + (x2 - x1) * t;
+            ry = y1 + (y2 - y1) * t;
+          } else {
+            rx = (1 - t) * (1 - t) * x1 + 2 * (1 - t) * t * cpX + t * t * x2;
+            ry = (1 - t) * (1 - t) * y1 + 2 * (1 - t) * t * cpY + t * t * y2;
+          }
+          const elev = getElevationPixel(rx, ry);
+          const scr = worldToScreen(rx, ry, elev);
+          if (i === 0) ctx.moveTo(scr.x, scr.y);
+          else ctx.lineTo(scr.x, scr.y);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      };
+
+      drawSandTrim(600, 750, 800, 1400, 1600, 1950, false);
+      drawSandTrim(2550, 750, 2300, 1450, 1600, 1950, false);
+      drawSandTrim(600, 750, 0, 0, 2550, 750, true);
 
       // 3. MIDRIVER SAPPHIRE CHANNELS & LEAPING CORAL SALMON FISH
       ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
@@ -562,9 +813,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       for (let yY = Math.floor(viewportTop / 128) * 128; yY < viewportBottom + 64; yY += 128) {
         if (yY < 0 || yY > 2560) continue;
-        const fishOnScreen = isVisible(getRiverX(yY), yY, 60);
-        if (fishOnScreen) {
-          ctx.fillRect(getRiverX(yY) - 10 + Math.sin(frameTick * 0.04) * 5, yY + (rippleOsc % 128), 12, 2);
+        const rx = getRiverX(yY);
+        if (isVisible(rx, yY, 60)) {
+          const scr = worldToScreen(rx - 10 + Math.sin(frameTick * 0.04) * 5, yY + (rippleOsc % 128), getElevationPixel(rx, yY));
+          ctx.fillRect(scr.x, scr.y, 12 * zoom, 2 * zoom);
         }
       }
 
@@ -574,22 +826,28 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         const fx = getRiverX(fy) + Math.sin(frameTick * 0.05 + f) * 12;
 
         if (isVisible(fx, fy, 40)) {
+          const elev = getElevationPixel(fx, fy);
+          const scr = worldToScreen(fx, fy, elev + Math.sin(frameTick * 0.08) * 10);
           ctx.fillStyle = "#f43f5e"; // coral orange scale
-          ctx.fillRect(fx - 2, fy - 4, 4, 8);
+          ctx.fillRect(scr.x - 2 * zoom, scr.y - 4 * zoom, 4 * zoom, 8 * zoom);
           const tailSway = Math.floor(frameTick / 4) % 2 === 0 ? 2 : -2;
           ctx.fillStyle = "#be123c"; // dark tail fin
-          ctx.fillRect(fx + tailSway - 0.5, fy + 4, 1.5, 3.5);
+          ctx.fillRect(scr.x + (tailSway - 0.5) * zoom, scr.y + 4 * zoom, 1.5 * zoom, 3.5 * zoom);
         }
       }
 
       // 4. RUSTIC CENTRAL BRIDGES OVERLAY (Double wooden side rails)
       const drawLogsBridge = (bx: number, by: number) => {
         if (isVisible(bx, by, 80)) {
+          const elev = getElevationPixel(bx, by);
+          const scrLeft = worldToScreen(bx - 48, by, elev);
+          const scrRight = worldToScreen(bx + 48, by, elev);
           ctx.fillStyle = "#3b1a03"; // dark timber borders
-          ctx.fillRect(bx - 48, by - 48, 4, 96);
-          ctx.fillRect(bx + 48, by - 48, 4, 96);
+          ctx.fillRect(scrLeft.x - 2 * zoom, scrLeft.y - 12 * zoom, 4 * zoom, 24 * zoom);
+          ctx.fillRect(scrRight.x - 2 * zoom, scrRight.y - 12 * zoom, 4 * zoom, 24 * zoom);
         }
       };
+
       // Main bridges at intersections
       drawLogsBridge(getRiverX(720), 720);
       drawLogsBridge(getRiverX(1536), 1536);
@@ -608,8 +866,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             ? assets.landscapeProps.pineTree
             : assets.landscapeProps.neonCrystalTree;
 
+        const elev = getElevationPixel(tx, ty);
+        const scr = worldToScreen(tx, ty, elev);
+
         ctx.save();
-        ctx.translate(tx, ty);
+        ctx.translate(scr.x, scr.y);
+        ctx.scale(zoom, zoom);
         // Simple affine transform for flexible organic swaying in the storm/breeze
         ctx.transform(1, 0, swayAngle * 0.042, 1, 0, 0);
         ctx.drawImage(treeCanvas, -16, -42);
@@ -618,56 +880,92 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       const drawRusticCottage = (hx: number, hy: number) => {
         if (!isVisible(hx, hy, 80)) return;
-        ctx.drawImage(assets.landscapeProps.cozyCottage, hx - 32, hy - 32);
+
+        const elev = getElevationPixel(hx, hy);
+        const scr = worldToScreen(hx, hy, elev);
+
+        ctx.save();
+        ctx.translate(scr.x, scr.y);
+        ctx.scale(zoom, zoom);
+        ctx.drawImage(assets.landscapeProps.cozyCottage, -32, -32);
 
         // Smokestacks smoke particles cycle
         const smkOffset = (frameTick % 24) / 3;
         ctx.fillStyle = "rgba(241, 245, 249, 0.38)";
         ctx.beginPath();
-        ctx.arc(hx + 11 - smkOffset * 0.4, hy - 14 - smkOffset * 1.3, 2.5 + smkOffset * 0.15, 0, Math.PI * 2);
+        ctx.arc(11 - smkOffset * 0.4, -14 - smkOffset * 1.3, 2.5 + smkOffset * 0.15, 0, Math.PI * 2);
         ctx.fill();
         ctx.beginPath();
-        ctx.arc(hx + 13 - smkOffset * 0.3, hy - 20 - smkOffset * 1.5, 3.5 + smkOffset * 0.2, 0, Math.PI * 2);
+        ctx.arc(13 - smkOffset * 0.3, -20 - smkOffset * 1.5, 3.5 + smkOffset * 0.2, 0, Math.PI * 2);
         ctx.fill();
+        ctx.restore();
       };
 
       const drawWhiteTemple = (tx: number, ty: number) => {
         if (!isVisible(tx, ty, 96)) return;
-        ctx.drawImage(assets.landscapeProps.classicalTemple, tx - 40, ty - 46);
+
+        const elev = getElevationPixel(tx, ty);
+        const scr = worldToScreen(tx, ty, elev);
+
+        ctx.save();
+        ctx.translate(scr.x, scr.y);
+        ctx.scale(zoom, zoom);
+        ctx.drawImage(assets.landscapeProps.classicalTemple, -40, -46);
+        ctx.restore();
       };
 
       const drawHighSpire = (sx: number, sy: number) => {
         if (!isVisible(sx, sy, 96)) return;
-        ctx.drawImage(assets.landscapeProps.cyberSpire, sx - 24, sy - 52);
+
+        const elev = getElevationPixel(sx, sy);
+        const scr = worldToScreen(sx, sy, elev);
+
+        ctx.save();
+        ctx.translate(scr.x, scr.y);
+        ctx.scale(zoom, zoom);
+        ctx.drawImage(assets.landscapeProps.cyberSpire, -24, -52);
+        ctx.restore();
       };
 
       // Rocky white mountains
       const drawSnowyPeak = (mx: number, my: number, size: number) => {
         if (!isVisible(mx, my, size * 2)) return;
 
+        const elev = getElevationPixel(mx, my);
+        const scr = worldToScreen(mx, my, elev);
+
+        ctx.save();
+        ctx.translate(scr.x, scr.y);
+        ctx.scale(zoom, zoom);
+
         ctx.fillStyle = "#334155";
         ctx.beginPath();
-        ctx.moveTo(mx, my);
-        ctx.lineTo(mx - size, my + size * 1.5);
-        ctx.lineTo(mx + size, my + size * 1.5);
+        ctx.moveTo(0, -size * 1.5);
+        ctx.lineTo(-size, 0);
+        ctx.lineTo(size, 0);
         ctx.closePath();
         ctx.fill();
 
         ctx.fillStyle = "#f8fafc"; // Snow capped
         ctx.beginPath();
-        ctx.moveTo(mx, my);
-        ctx.lineTo(mx - size * 0.3, my + size * 0.45);
-        ctx.lineTo(mx + size * 0.3, my + size * 0.45);
+        ctx.moveTo(0, -size * 1.5);
+        ctx.lineTo(-size * 0.3, -size * 1.05);
+        ctx.lineTo(size * 0.3, -size * 1.05);
         ctx.closePath();
         ctx.fill();
+        ctx.restore();
       };
 
       // --- RICH PROCEDURAL LANDSCAPE DECORATION HELPERS ---
       // Beautiful wild flower blankets
       const drawWildFlowers = (x: number, y: number, style: "cyber" | "agrarian" | "ancient") => {
         if (!isVisible(x, y, 24)) return;
+        const elev = getElevationPixel(x, y);
+        const scr = worldToScreen(x, y, elev);
+
         ctx.save();
-        ctx.translate(x, y);
+        ctx.translate(scr.x, scr.y);
+        ctx.scale(zoom, zoom);
 
         const colors = 
           style === "cyber" ? ["#ec4899", "#a855f7", "#06b6d4"] :
@@ -701,15 +999,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const drawHoppingBunny = (bx: number, by: number) => {
         if (!isVisible(bx, by, 32)) return;
         const hop = Math.max(0, Math.sin(frameTick * 0.08 + bx * 0.1) * 6.5);
-        const ry = by - hop;
+        const elev = getElevationPixel(bx, by) + hop;
+        const scr = worldToScreen(bx, by, elev);
 
         ctx.save();
-        ctx.translate(bx, ry);
+        ctx.translate(scr.x, scr.y);
+        ctx.scale(zoom, zoom);
 
         // Ground shadow
         ctx.fillStyle = "rgba(12, 19, 36, 0.16)";
         ctx.beginPath();
-        ctx.ellipse(0, hop + 6, 5 - hop * 0.2, 2, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, 6, 5, 2, 0, 0, Math.PI * 2);
         ctx.fill();
 
         // Fluffy body
@@ -752,14 +1052,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           const radius = 22 + Math.sin(frameTick * 0.02 + i) * 7;
           const bx = sx + Math.cos(angle) * radius;
           const by = sy - 24 + Math.sin(angle * 1.4) * radius * 0.45;
+          const elev = getElevationPixel(bx, by);
+          const scr = worldToScreen(bx, by, elev);
 
           ctx.fillStyle = "rgba(34, 211, 238, 0.45)"; // glow cyan
           ctx.beginPath();
-          ctx.arc(bx, by, 3.2, 0, Math.PI * 2);
+          ctx.arc(scr.x, scr.y, 3.2 * zoom, 0, Math.PI * 2);
           ctx.fill();
 
           ctx.fillStyle = "#e2fbfd";
-          ctx.fillRect(bx - 0.7, by - 0.7, 1.4, 1.4);
+          ctx.fillRect(scr.x - 0.7 * zoom, scr.y - 0.7 * zoom, 1.4 * zoom, 1.4 * zoom);
         }
         ctx.restore();
       };
@@ -772,15 +1074,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           const wOsc = frameTick * 0.024 + i * Math.PI;
           const wx = tx + Math.sin(wOsc * 1.3) * 32;
           const wy = ty - 18 - Math.cos(wOsc) * 22;
+          const elev = getElevationPixel(wx, wy);
+          const scr = worldToScreen(wx, wy, elev);
 
           ctx.fillStyle = "rgba(147, 197, 253, 0.35)"; // ethereal wisdom blue aura
           ctx.beginPath();
-          ctx.arc(wx, wy, 5 + Math.sin(frameTick * 0.07 + i) * 1.5, 0, Math.PI * 2);
+          ctx.arc(scr.x, scr.y, (5 + Math.sin(frameTick * 0.07 + i) * 1.5) * zoom, 0, Math.PI * 2);
           ctx.fill();
 
           ctx.fillStyle = "#f8fafc";
           ctx.beginPath();
-          ctx.arc(wx, wy - 1, 1.5, 0, Math.PI * 2);
+          ctx.arc(scr.x, scr.y - 1 * zoom, 1.5 * zoom, 0, Math.PI * 2);
           ctx.fill();
         }
         ctx.restore();
@@ -789,8 +1093,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       // Mercantile supply crates
       const drawScenicCrate = (cx: number, cy: number) => {
         if (!isVisible(cx, cy, 32)) return;
+        const elev = getElevationPixel(cx, cy);
+        const scr = worldToScreen(cx, cy, elev);
+
         ctx.save();
-        ctx.translate(cx, cy);
+        ctx.translate(scr.x, scr.y);
+        ctx.scale(zoom, zoom);
 
         // shadow
         ctx.fillStyle = "rgba(12, 19, 36, 0.25)";
@@ -818,8 +1126,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       // Mercantile wooden barrels
       const drawScenicBarrel = (bx: number, by: number) => {
         if (!isVisible(bx, by, 32)) return;
+        const elev = getElevationPixel(bx, by);
+        const scr = worldToScreen(bx, by, elev);
+
         ctx.save();
-        ctx.translate(bx, by);
+        ctx.translate(scr.x, scr.y);
+        ctx.scale(zoom, zoom);
 
         // shadow
         ctx.fillStyle = "rgba(12, 19, 36, 0.25)";
@@ -845,8 +1157,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       // Ancient Lyceum Columns ruins shards
       const drawAncientRuinColumn = (rx: number, ry: number) => {
         if (!isVisible(rx, ry, 32)) return;
+        const elev = getElevationPixel(rx, ry);
+        const scr = worldToScreen(rx, ry, elev);
+
         ctx.save();
-        ctx.translate(rx, ry);
+        ctx.translate(scr.x, scr.y);
+        ctx.scale(zoom, zoom);
 
         // shadow
         ctx.fillStyle = "rgba(12, 19, 36, 0.2)";
@@ -882,11 +1198,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           const cx = 350 + col * 32 + Math.sin(col * 0.5) * 15;
           const speed = 2.4 + (col % 4) * 0.7;
           const cy = ((frameTick * speed + col * 140) % 550) + 420;
-          if (isVisible(cx, cy, 24)) {
-            ctx.fillRect(cx, cy, 1.2, 14);
+          const scr = worldToScreen(cx, cy, getElevationPixel(cx, cy));
+          if (scr.x >= 0 && scr.x <= dimensions.width && scr.y >= 0 && scr.y <= dimensions.height) {
+            ctx.fillRect(scr.x, scr.y, 1.2 * zoom, 14 * zoom);
             // Glowing binary bit head byte
             ctx.fillStyle = "rgba(103, 232, 249, 0.7)";
-            ctx.fillRect(cx - 0.5, cy + 11, 2, 2);
+            ctx.fillRect(scr.x - 0.5 * zoom, scr.y + 11 * zoom, 2 * zoom, 2 * zoom);
             ctx.fillStyle = "rgba(168, 85, 247, 0.22)";
           }
         }
@@ -1092,13 +1409,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const bX = (frameTick * 0.9) % (viewportRight - viewportLeft + 200) + viewportLeft - 100;
       const bY = viewportTop + 140 + Math.sin(frameTick * 0.015) * 35;
       if (isVisible(bX, bY, 48)) {
+        const scr = worldToScreen(bX, bY, 120); // soaring high 120px above the ground!
         ctx.strokeStyle = "rgba(255, 255, 255, 0.48)";
-        ctx.lineWidth = 1.6;
+        ctx.lineWidth = 1.6 * zoom;
         ctx.beginPath();
         const wingSway = Math.sin(frameTick * 0.12) > 0 ? -4.5 : 4.5;
-        ctx.moveTo(bX - 8, bY + wingSway);
-        ctx.lineTo(bX, bY);
-        ctx.lineTo(bX + 8, bY + wingSway);
+        ctx.moveTo(scr.x - 8 * zoom, scr.y + wingSway * zoom);
+        ctx.lineTo(scr.x, scr.y);
+        ctx.lineTo(scr.x + 8 * zoom, scr.y + wingSway * zoom);
         ctx.stroke();
       }
 
@@ -1110,19 +1428,30 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         const cy = 250 + c * 600 + Math.sin(frameTick * 0.01 + c) * 30;
 
         if (isVisible(cx, cy, 180)) {
+          const elev = getElevationPixel(cx, cy);
+          const scrShadow = worldToScreen(cx + 48, cy + 96, elev);
+          const scrCloud = worldToScreen(cx, cy, elev + 100); // 100px cloud ceiling!
+
           // Soft gray ground shadow
           ctx.fillStyle = "rgba(11, 19, 35, 0.06)";
           ctx.beginPath();
-          ctx.ellipse(cx + 48, cy + 96, 52, 14, 0, 0, Math.PI * 2);
+          ctx.ellipse(scrShadow.x, scrShadow.y, 52 * zoom, 14 * zoom, 0, 0, Math.PI * 2);
           ctx.fill();
+
           // Textured cloud
-          ctx.drawImage(cloudP, cx, cy);
+          ctx.save();
+          ctx.translate(scrCloud.x, scrCloud.y);
+          ctx.scale(zoom, zoom);
+          ctx.drawImage(cloudP, 0, 0);
+          ctx.restore();
         }
       }
 
       // 8. INTERACTIVE ENRICHED ACTIVE MILISTONE PIN NODES
       LANDMARKS.forEach((node) => {
-        if (!isVisible(node.x, node.y, 80)) return;
+        const elev = getElevationPixel(node.x, node.y);
+        const scr = worldToScreen(node.x, node.y, elev);
+        if (scr.x < -60 || scr.x > dimensions.width + 60 || scr.y < -60 || scr.y > dimensions.height + 60) return;
 
         const isSolved = solvedNodeIds.includes(node.id);
         const pulse = 1 + Math.sin(frameTick * 0.08) * 0.08;
@@ -1132,14 +1461,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         const isActive = activeNodeId === node.id;
         if (isHovered || isActive) {
           ctx.strokeStyle = "rgba(255, 251, 235, 0.65)";
-          ctx.lineWidth = 3;
+          ctx.lineWidth = 3 * zoom;
           ctx.beginPath();
-          ctx.arc(node.x, node.y, 22 * pulse, 0, Math.PI * 2);
+          ctx.arc(scr.x, scr.y, 22 * pulse * zoom, 0, Math.PI * 2);
           ctx.stroke();
         }
 
         // Gradient glow aura
-        const glowGrd = ctx.createRadialGradient(node.x, node.y, 2, node.x, node.y, 20 * pulse);
+        const glowGrd = ctx.createRadialGradient(scr.x, scr.y, 2 * zoom, scr.x, scr.y, 20 * pulse * zoom);
         if (isSolved) {
           glowGrd.addColorStop(0, node.color);
           glowGrd.addColorStop(1, "rgba(0,0,0,0)");
@@ -1149,21 +1478,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         }
         ctx.fillStyle = glowGrd;
         ctx.beginPath();
-        ctx.arc(node.x, node.y, 23 * pulse, 0, Math.PI * 2);
+        ctx.arc(scr.x, scr.y, 23 * pulse * zoom, 0, Math.PI * 2);
         ctx.fill();
 
         // Pin body
         ctx.fillStyle = isSolved ? node.color : "#64748b";
         ctx.strokeStyle = isSolved ? "#ffffff" : "#475569";
-        ctx.lineWidth = 3.2;
+        ctx.lineWidth = 3.2 * zoom;
         ctx.beginPath();
-        ctx.arc(node.x, node.y, 8.5, 0, Math.PI * 2);
+        ctx.arc(scr.x, scr.y, 8.5 * zoom, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
 
         // Decal overlay carvings
         ctx.save();
-        ctx.translate(node.x, node.y - 12);
+        ctx.translate(scr.x, scr.y - 12 * zoom);
+        ctx.scale(zoom, zoom);
 
         if (node.icon === "gate") {
           ctx.fillStyle = isSolved ? "#d8b4fe" : "#94a3b8";
@@ -1223,41 +1553,229 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.restore();
       });
 
+      // 8.5 DRAW SCHOLARS Standouts near cottages
+      const drawScholar = (sx: number, sy: number, type: "turing" | "smith" | "plato") => {
+        if (!isVisible(sx, sy, 48)) return;
+        const elev = getElevationPixel(sx, sy);
+        const scr = worldToScreen(sx, sy, elev);
+
+        ctx.save();
+        ctx.translate(scr.x, scr.y);
+        ctx.scale(zoom, zoom);
+
+        // Ground shadow
+        ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
+        ctx.beginPath();
+        ctx.ellipse(0, 11, 7, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Idle bobbing
+        const idleBob = Math.sin(frameTick * 0.05 + sx) * 1.2;
+        ctx.translate(0, idleBob);
+
+        // Robes/Outfit
+        if (type === "turing") {
+          ctx.fillStyle = "#7c3aed";
+          ctx.fillRect(-5, -2, 10, 12);
+          ctx.fillStyle = "#10b981"; // emerald matrix collar
+          ctx.fillRect(-3, -2, 6, 2);
+        } else if (type === "smith") {
+          ctx.fillStyle = "#b45309";
+          ctx.fillRect(-5, -2, 10, 12);
+          ctx.fillStyle = "#fbbf24"; // gold trim
+          ctx.fillRect(-3, -2, 6, 2);
+        } else {
+          ctx.fillStyle = "#f8fafc";
+          ctx.fillRect(-5, -2, 10, 12);
+          ctx.fillStyle = "#3b82f6"; // blue sash
+          ctx.fillRect(-5, 2, 10, 2);
+        }
+
+        // Skin
+        ctx.fillStyle = "#ffedd5";
+        ctx.fillRect(-4, -9, 8, 7);
+
+        // Hair/Beard
+        if (type === "turing") {
+          ctx.fillStyle = "#4b5563"; // short grey hair
+          ctx.fillRect(-5, -11, 10, 3);
+        } else if (type === "smith") {
+          ctx.fillStyle = "#d1d5db"; // white powdered wig
+          ctx.fillRect(-5, -11, 10, 4);
+          ctx.fillRect(-6, -8, 2, 5);
+          ctx.fillRect(4, -8, 2, 5);
+        } else {
+          ctx.fillStyle = "#d1d5db"; // noble white ancient beard
+          ctx.fillRect(-4, -10, 8, 3);
+          ctx.fillStyle = "#e5e7eb";
+          ctx.fillRect(-3, -4, 6, 5);
+        }
+
+        // Eyes
+        ctx.fillStyle = "#1e293b";
+        ctx.fillRect(-2, -6, 1.2, 1.2);
+        ctx.fillRect(1, -6, 1.2, 1.2);
+
+        // Floating "?" bubble if within 40px
+        const dist = Math.hypot(sx - posRef.current.x, sy - posRef.current.y);
+        if (dist < 40) {
+          ctx.fillStyle = "#ffffff";
+          ctx.strokeStyle = "#1e293b";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(0, -22, 7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+
+          // pointer
+          ctx.fillStyle = "#ffffff";
+          ctx.beginPath();
+          ctx.moveTo(-2, -15);
+          ctx.lineTo(2, -15);
+          ctx.lineTo(0, -12);
+          ctx.closePath();
+          ctx.fill();
+          ctx.strokeStyle = "#1e293b";
+          ctx.beginPath();
+          ctx.moveTo(-2, -15);
+          ctx.lineTo(0, -12);
+          ctx.lineTo(2, -15);
+          ctx.stroke();
+
+          ctx.fillStyle = "#7c3aed";
+          ctx.font = "bold 9px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("?", 0, -19);
+        }
+
+        ctx.restore();
+      };
+
+      drawScholar(450, 690, "turing");
+      drawScholar(2490, 465, "smith");
+      drawScholar(1550, 2170, "plato");
+
+      // 8.6 COLLECTIBLE CHESTS RENDERING
+      const drawCollectibleChest = (chest: CollectibleChest) => {
+        if (!isVisible(chest.x, chest.y, 48)) return;
+        const elev = getElevationPixel(chest.x, chest.y);
+        const scr = worldToScreen(chest.x, chest.y, elev);
+
+        ctx.save();
+        ctx.translate(scr.x, scr.y);
+        ctx.scale(zoom, zoom);
+
+        // Ground shadow
+        ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+        ctx.beginPath();
+        ctx.ellipse(0, 4, 8, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Bob up and down lightly if unopened
+        const bob = !chest.opened ? Math.sin(frameTick * 0.08 + chest.x) * 1.5 - 2 : 0;
+        ctx.translate(0, bob);
+
+        if (!chest.opened) {
+          // Closed Golden Chest
+          ctx.fillStyle = "#b45309"; // base dark wood box
+          ctx.fillRect(-7, -5, 14, 10);
+          
+          ctx.fillStyle = "#fbbf24"; // golden shiny lid
+          ctx.fillRect(-8, -9, 16, 5);
+
+          // Golden details
+          ctx.fillStyle = "#f59e0b";
+          ctx.fillRect(-2, -5, 4, 4); // lockplate
+          ctx.fillStyle = "#7c2d12";
+          ctx.fillRect(-0.5, -4, 1, 2); // keyhole
+
+          // Shining sparkles stars floating above the chest
+          if (frameTick % 30 < 15) {
+            ctx.fillStyle = "rgba(253, 224, 71, 0.9)";
+            ctx.beginPath();
+            ctx.arc(-8, -14, 1.2, 0, Math.PI * 2);
+            ctx.arc(8, -11, 1, 0, Math.PI * 2);
+            ctx.arc(2, -17, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else {
+          // Opened chest! Gold glittering pile inside
+          ctx.fillStyle = "#78350f";
+          ctx.fillRect(-7, -2, 14, 7);
+          ctx.fillStyle = "rgba(251, 191, 36, 0.65)";
+          ctx.beginPath();
+          ctx.arc(0, -1, 5, Math.PI, 0);
+          ctx.fill();
+
+          // Flipped lid
+          ctx.fillStyle = "#92400e";
+          ctx.fillRect(-7, -5, 14, 3);
+        }
+
+        // Display floating action indicator top if within 36px range!
+        const dist = Math.hypot(chest.x - posRef.current.x, chest.y - posRef.current.y);
+        if (dist < 36 && !chest.opened) {
+          ctx.fillStyle = "#fbbf24";
+          ctx.strokeStyle = "#7c2d12";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.roundRect(-22, -26, 44, 11, 3);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = "#1e293b";
+          ctx.font = "bold 7px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("OPEN [Space]", 0, -18);
+        }
+
+        ctx.restore();
+      };
+
+      chests.forEach((chest) => drawCollectibleChest(chest));
+
       // 9. COZY DOUBLE DOT INDICATOR TARGET CLICKS
       if (isWalkingRef.current) {
+        const elev = getElevationPixel(targetRef.current.x, targetRef.current.y);
+        const scr = worldToScreen(targetRef.current.x, targetRef.current.y, elev);
+
         ctx.strokeStyle = "#fb7185";
-        ctx.lineWidth = 1.8;
-        ctx.setLineDash([2, 3.5]);
+        ctx.lineWidth = 1.8 * zoom;
+        ctx.setLineDash([2 * zoom, 3.5 * zoom]);
         ctx.beginPath();
-        ctx.arc(targetRef.current.x, targetRef.current.y, 8, 0, Math.PI * 2);
+        ctx.arc(scr.x, scr.y, 8 * zoom, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
 
         ctx.fillStyle = "#fb7185";
-        ctx.fillRect(targetRef.current.x - 1, targetRef.current.y - 6, 2.2, 12);
-        ctx.fillRect(targetRef.current.x - 6, targetRef.current.y - 1, 12, 2.2);
+        ctx.fillRect(scr.x - 1 * zoom, scr.y - 6 * zoom, 2.2 * zoom, 12 * zoom);
+        ctx.fillRect(scr.x - 6 * zoom, scr.y - 1 * zoom, 12 * zoom, 2.2 * zoom);
       }
 
       // 10. ACTIVE JRPG PLAYER AVATAR RENDERING
       const ax = posRef.current.x;
       const ay = posRef.current.y;
+      const aElev = getElevationPixel(ax, ay);
+      const scrPlayer = worldToScreen(ax, ay, aElev);
 
       ctx.save();
       // Ground shadow
       ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
       ctx.beginPath();
-      ctx.ellipse(ax, ay + 14, 11, 4.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(scrPlayer.x, scrPlayer.y + 14 * zoom, 11 * zoom, 4.5 * zoom, 0, 0, Math.PI * 2);
       ctx.fill();
 
       const walkFr = Math.floor(frameTick / 6) % 4;
 
       if (avatarConfig) {
         ctx.save();
-        ctx.translate(ax - 32, ay - 30);
+        ctx.translate(scrPlayer.x - 32 * zoom, scrPlayer.y - 30 * zoom);
         drawCompositedAvatar(ctx, 0, 0, avatarConfig, directionRef.current, walkFr, isWalkingRef.current);
         ctx.restore();
       } else {
-        ctx.translate(ax, ay);
+        ctx.save();
+        ctx.translate(scrPlayer.x, scrPlayer.y);
+        ctx.scale(zoom, zoom);
 
         // Bob bounce
         const bouncy = isWalkingRef.current ? Math.round(Math.sin(frameTick * 0.3) * 1.5) : 0;
@@ -1324,6 +1842,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           ctx.fillStyle = "#ff006e";
           ctx.fillRect(-2, -6, 4, 2);
         }
+        ctx.restore();
       }
       ctx.restore();
 
@@ -1335,10 +1854,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         const lY = ((i * 115 + frameTick * 1.1) % (viewportBottom - viewportTop + 100)) + viewportTop - 50;
 
         if (isVisible(lX, lY, 24)) {
+          const elev = getElevationPixel(lX, lY);
+          const scr = worldToScreen(lX, lY, elev + 40);
           ctx.fillStyle = timeOfDay === "Sunset" ? "#ea580c" : timeOfDay === "Night" ? "#818cf8" : "#f472b6";
           ctx.beginPath();
           const pSway = Math.sin(frameTick * 0.045 + i) * 6;
-          ctx.ellipse(lX + pSway, lY, 5, 2.5, Math.PI / 4 + Math.sin(frameTick * 0.02 + i) * 0.35, 0, Math.PI * 2);
+          ctx.ellipse(scr.x + pSway * zoom, scr.y, 5 * zoom, 2.5 * zoom, Math.PI / 4 + Math.sin(frameTick * 0.02 + i) * 0.35, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -1354,12 +1875,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         LANDMARKS.forEach((node) => {
           const solved = solvedNodeIds.includes(node.id);
           if (solved && isVisible(node.x, node.y, 64)) {
-            const glow = ctx.createRadialGradient(node.x, node.y, 1, node.x, node.y, 52);
+            const elev = getElevationPixel(node.x, node.y);
+            const scr = worldToScreen(node.x, node.y, elev);
+            const glow = ctx.createRadialGradient(scr.x, scr.y, 1 * zoom, scr.x, scr.y, 52 * zoom);
             glow.addColorStop(0, "rgba(253, 224, 71, 0.4)");
             glow.addColorStop(1, "rgba(253, 224, 71, 0)");
             ctx.fillStyle = glow;
             ctx.beginPath();
-            ctx.arc(node.x, node.y, 52, 0, Math.PI * 2);
+            ctx.arc(scr.x, scr.y, 52 * zoom, 0, Math.PI * 2);
             ctx.fill();
           }
         });
@@ -1371,22 +1894,25 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           const flyY = (j * 93 + Math.cos(frameTick * 0.025 + j) * 60) % 2560;
 
           if (isVisible(flyX, flyY, 32)) {
-            ctx.fillRect(flyX, flyY, 2, 2);
+            const elev = getElevationPixel(flyX, flyY);
+            const scr = worldToScreen(flyX, flyY, elev);
+            ctx.fillRect(scr.x, scr.y, 2 * zoom, 2 * zoom);
             ctx.fillStyle = "rgba(163, 230, 53, 0.1)";
             ctx.beginPath();
-            ctx.arc(flyX + 1, flyY + 1, 5, 0, Math.PI * 2);
+            ctx.arc(scr.x + 1 * zoom, scr.y + 1 * zoom, 5 * zoom, 0, Math.PI * 2);
             ctx.fill();
             ctx.fillStyle = "rgba(163, 230, 53, 0.88)";
           }
         }
 
         // Glow aura following active adventurer
-        const pGlow = ctx.createRadialGradient(posRef.current.x, posRef.current.y, 1, posRef.current.x, posRef.current.y, 45);
+        const scrPlayerCent = worldToScreen(posRef.current.x, posRef.current.y, getElevationPixel(posRef.current.x, posRef.current.y));
+        const pGlow = ctx.createRadialGradient(scrPlayerCent.x, scrPlayerCent.y, 1 * zoom, scrPlayerCent.x, scrPlayerCent.y, 45 * zoom);
         pGlow.addColorStop(0, "rgba(254, 240, 138, 0.3)");
         pGlow.addColorStop(1, "rgba(254, 240, 138, 0)");
         ctx.fillStyle = pGlow;
         ctx.beginPath();
-        ctx.arc(posRef.current.x, posRef.current.y, 45, 0, Math.PI * 2);
+        ctx.arc(scrPlayerCent.x, scrPlayerCent.y, 45 * zoom, 0, Math.PI * 2);
         ctx.fill();
 
       } else if (timeOfDay === "Sunset") {

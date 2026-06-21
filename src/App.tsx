@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Position, LandmarkNode, PlayerStats } from "./types";
+import { Position, LandmarkNode, PlayerStats, ScholarCottage, CollectibleChest } from "./types";
 import { LANDMARKS } from "./landmarksData";
 import { MapCanvas } from "./components/MapCanvas";
 import { DialoguePanel } from "./components/DialoguePanel";
@@ -8,6 +8,33 @@ import { motion, AnimatePresence } from "motion/react";
 import { Flame, Compass, Star, HelpCircle, Book, Award, Check } from "lucide-react";
 import { AvatarConfig, DEFAULT_AVATAR_CONFIG } from "./utils/avatarDrawer";
 import { AvatarCustomizer } from "./components/AvatarCustomizer";
+
+const SCHOLAR_COTTAGES: ScholarCottage[] = [
+  { 
+    id: "turing-cottage", 
+    x: 450, 
+    y: 690, 
+    name: "Alan Turing's Cyber Cabin", 
+    scholar: "Alan Turing", 
+    text: "Welcome, traveler. Out here in the western plains of Logic, we compile reality from binary truths. Seek the Gate of Computation, and remember that any logical machine is bounded by what it can decide." 
+  },
+  { 
+    id: "smith-cottage", 
+    x: 2490, 
+    y: 465, 
+    name: "Adam Smith's Wealth Homestead", 
+    scholar: "Adam Smith", 
+    text: "Greetings, voyager! Welcome to the Eastern Economics Pastures. Here we observe the quiet, magnificent dance of the invisible hand. Every cottage and market specializes in division of labor to enrich our common welfare." 
+  },
+  { 
+    id: "plato-retreat", 
+    x: 1550, 
+    y: 2170, 
+    name: "Plato's Lyceum Hermitage", 
+    scholar: "Plato", 
+    text: "Be welcomed, seeker. In this southern high peak of absolute philosophy, we step out of the shadowy caves of illusion into the bright sun of universal Forms. Let our dialogue uncover the true, the beautiful, and the good." 
+  }
+];
 
 export default function App() {
   // Coordinates of the start position on the scenic wooden overworld bridge
@@ -35,6 +62,15 @@ export default function App() {
   const [levelUpMessage, setLevelUpMessage] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(true);
   const [showMeditationAlert, setShowMeditationAlert] = useState(false);
+
+  // Scholars & Chests Exploration States
+  const [activeCottage, setActiveCottage] = useState<ScholarCottage | null>(null);
+  const [chests, setChests] = useState<CollectibleChest[]>([
+    { id: "logic-chest", x: 750, y: 600, name: "Pi Gold Chest", opened: false, rewardXp: 50 },
+    { id: "market-chest", x: 2600, y: 560, name: "Coin Chest", opened: false, rewardXp: 50 },
+    { id: "philosophy-chest", x: 1420, y: 1850, name: "Ivy Chest", opened: false, rewardXp: 50 },
+  ]);
+  const [chestAlert, setChestAlert] = useState<string | null>(null);
 
   // Socratic random meditation wisdom quote
   const socratesQuotes = [
@@ -76,12 +112,45 @@ export default function App() {
         console.error(e);
       }
     }
+
+    const savedChests = localStorage.getItem("fv_chests");
+    if (savedChests) {
+      try {
+        setChests(JSON.parse(savedChests));
+      } catch (e) {
+        console.error(e);
+      }
+    }
   }, []);
 
   // Save changes to local storage
   const saveGameState = (solvedIds: string[], currentStats: PlayerStats) => {
     localStorage.setItem("fv_solved_nodes", JSON.stringify(solvedIds));
     localStorage.setItem("fv_player_stats", JSON.stringify(currentStats));
+  };
+
+  // Chest opener callback
+  const handleOpenChest = (chestId: string) => {
+    setChests((prev) => {
+      const idx = prev.findIndex((c) => c.id === chestId);
+      if (idx === -1 || prev[idx].opened) return prev;
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], opened: true };
+      
+      const xpAmount = copy[idx].rewardXp;
+      setChestAlert(`🎉 YOU DISCOVERED THE ${copy[idx].name.toUpperCase()}! You retrieved lost thinker relics: +${xpAmount} Mastery XP and fully replenished your Thought Energy!`);
+      
+      setStats((s) => ({ ...s, energy: 100 }));
+      handleAwardXp(xpAmount);
+      
+      localStorage.setItem("fv_chests", JSON.stringify(copy));
+      return copy;
+    });
+  };
+
+  // Scholar Cabin dialogue opener callback
+  const handleOpenCottageDialogue = (cottage: ScholarCottage | null) => {
+    setActiveCottage(cottage);
   };
 
   // Close Socratic dialogue panel
@@ -185,12 +254,20 @@ export default function App() {
         activeDials: 0,
       };
       const resetSolved: string[] = [];
+      const defaultChests = [
+        { id: "logic-chest", x: 750, y: 600, name: "Pi Gold Chest", opened: false, rewardXp: 50 },
+        { id: "market-chest", x: 2600, y: 560, name: "Coin Chest", opened: false, rewardXp: 50 },
+        { id: "philosophy-chest", x: 1420, y: 1850, name: "Ivy Chest", opened: false, rewardXp: 50 },
+      ];
       setSolvedNodeIds(resetSolved);
       setStats(resetStats);
+      setChests(defaultChests);
       setAvatarPos({ x: 395, y: 310 });
       setTargetPos({ x: 395, y: 310 });
       setActiveDialogueNode(null);
+      setActiveCottage(null);
       saveGameState(resetSolved, resetStats);
+      localStorage.removeItem("fv_chests");
     }
   };
 
@@ -282,6 +359,11 @@ export default function App() {
             onNearNode={(node) => setActiveDialogueNode(node)}
             isDialogueOpen={activeDialogueNode !== null}
             avatarConfig={avatarConfig}
+            cottages={SCHOLAR_COTTAGES}
+            chests={chests}
+            onNearCottage={handleOpenCottageDialogue}
+            activeCottageId={activeCottage?.id || null}
+            onOpenChest={handleOpenChest}
           />
 
           {/* Dialogue card overlay (slides up nicely) */}
@@ -442,6 +524,112 @@ export default function App() {
                 className="mt-5 w-full bg-[#7c2d12] hover:bg-[#9a3412] text-white font-black text-xs py-2.5 rounded-lg border-2 border-amber-950 cursor-pointer transition-colors shadow"
               >
                 Return to Overworld
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Interactive Scholar Cottage Modal - Parchment Scroll style */}
+      <AnimatePresence>
+        {activeCottage && (
+          <div className="fixed inset-0 bg-[#3c2f2f]/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 font-mono">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-[#fef9c3] border-4 border-[#7c2d12] max-w-lg w-full rounded-2xl overflow-hidden shadow-2xl flex flex-col text-[#3c2f2f]"
+            >
+              {/* Header */}
+              <div className="bg-[#7c2d12] border-b-2 border-amber-950 p-4 flex justify-between items-center text-amber-100">
+                <span className="text-yellow-300 text-xs font-black uppercase tracking-wider flex items-center gap-1.5 font-sans">
+                  🏫 INTERACTIVE SCHOLAR RESIDENCE
+                </span>
+                <button
+                  onClick={() => setActiveCottage(null)}
+                  className="text-amber-200 hover:text-white hover:scale-110 cursor-pointer transition-all bg-amber-950/40 p-1 rounded-full border border-amber-900/30"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4 text-xs bg-[#faf1da]">
+                <div className="flex items-center space-x-3.5">
+                  <div className="w-12 h-12 rounded-full bg-amber-900/15 border-2 border-[#7c2d12]/40 flex items-center justify-center text-xl font-bold">
+                    {activeCottage.scholar === "Alan Turing" ? "🧠" : activeCottage.scholar === "Adam Smith" ? "🌽" : "🏛️"}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-[#5e1e07]">{activeCottage.name}</h3>
+                    <div className="text-[10px] text-amber-800 font-extrabold uppercase mt-0.5">Resident Scholar: {activeCottage.scholar}</div>
+                  </div>
+                </div>
+
+                <div className="h-0.5 bg-[#7c2d12]/15" />
+
+                <div className="space-y-2">
+                  <span className="text-[10px] text-amber-800 font-black uppercase">Scholar Greeting:</span>
+                  <p className="text-[#3c2f2f] leading-relaxed text-[11px] font-semibold bg-[#fffbeb] p-3.5 rounded-lg border border-[#7c2d12]/10 shadow-inner">
+                    "{activeCottage.text}"
+                  </p>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="bg-[#eedba5] p-4 border-t-2 border-[#7c2d12]/20 flex justify-between items-center gap-2.5">
+                <button
+                  onClick={() => {
+                    setStats((prev) => {
+                      const nextStats = {
+                        ...prev,
+                        energy: Math.min(100, prev.energy + 25)
+                      };
+                      return nextStats;
+                    });
+                    alert("✨ The scholar shares a spark of wisdom! You feel restored: +25 Thought Energy!");
+                    setActiveCottage(null);
+                  }}
+                  className="bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-950 text-white font-black text-xs px-3.5 py-2.5 rounded-lg border-2 border-emerald-950 transition-all cursor-pointer shadow hover:scale-103"
+                >
+                  Request Wisdom Blessing (+25 Energy)
+                </button>
+                <button
+                  onClick={() => setActiveCottage(null)}
+                  className="bg-[#fdf6e2] hover:bg-amber-100 text-[#7c2d12] font-black text-xs px-4 py-2.5 rounded-lg border-2 border-amber-900/60 cursor-pointer shadow whitespace-nowrap"
+                >
+                  Bid Farewell
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Interactive Item/Chest Open Alert */}
+      <AnimatePresence>
+        {chestAlert && (
+          <div className="fixed inset-0 bg-[#3c2f2f]/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 font-mono">
+            <motion.div
+              initial={{ scale: 0.85, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.85, opacity: 0 }}
+              className="bg-[#fdf6e2] border-8 border-yellow-500/80 rounded-2xl max-w-md w-full p-6 text-center shadow-2xl relative overflow-hidden text-[#3c2f2f]"
+            >
+              <div className="w-14 h-14 bg-yellow-100 rounded-full flex items-center justify-center border-2 border-yellow-600 mx-auto mb-4 animate-pulse">
+                <Award className="w-8 h-8 text-yellow-600" />
+              </div>
+              <h3 className="text-xl font-black text-amber-950 uppercase tracking-widest">TREASURE ACQUIRED</h3>
+              <div className="text-[10px] text-amber-700 font-extrabold uppercase tracking-wider mt-1">Overworld Collectible Chest Opened</div>
+              
+              <p className="text-amber-900 text-xs font-bold leading-relaxed mt-4 bg-[#faf1da] p-4 rounded-xl border border-yellow-250 shadow-inner">
+                {chestAlert}
+              </p>
+
+              <button
+                onClick={() => setChestAlert(null)}
+                className="mt-5 w-full bg-[#7c2d12] hover:bg-[#9a3412] active:bg-amber-950 text-white font-black text-xs py-2.5 rounded-lg border-2 border-amber-950 shadow cursor-pointer transition-colors"
+              >
+                HEED THE PATHWAY
               </button>
             </motion.div>
           </div>

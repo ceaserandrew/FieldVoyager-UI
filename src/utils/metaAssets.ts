@@ -49,6 +49,44 @@ export function getRiverInfo(c: number, r: number) {
   }
 }
 
+// Calculate 3D height elevation for a given tile coordinate (c, r) in pixels
+export function getElevation(c: number, r: number): number {
+  if (c < 0 || c >= MAP_COLS || r < 0 || r >= MAP_ROWS) return 0;
+  
+  // Water channels stay at 0
+  const info = getRiverInfo(c, r);
+  if (info.dist <= 3.2 && !info.isBridgeRow) {
+    return 0;
+  }
+
+  // Outer border water
+  if (c <= 3 || c >= MAP_COLS - 4 || r <= 3 || r >= MAP_ROWS - 4) {
+    return 0;
+  }
+
+  // Centers of our 3 core islands:
+  const distLogic = Math.hypot(c - 20, r - 24);
+  const distEcon = Math.hypot(c - 80, r - 24);
+  const distPhil = Math.hypot(c - 50, r - 61);
+
+  const minDist = Math.min(distLogic, distEcon, distPhil);
+
+  if (minDist === distPhil) {
+    if (distPhil < 8) return 56;  // Lyceum high peaks
+    if (distPhil < 16) return 38; // Sanctuary terraces
+    if (distPhil < 24) return 18; // Philosophical grass footholds
+    return 8;
+  } else if (minDist === distLogic) {
+    if (distLogic < 10) return 32; // Core logic hexagonal platform
+    if (distLogic < 18) return 16; // Binary math plateaus
+    return 8;
+  } else {
+    if (distEcon < 12) return 24;  // Economic agora plateau
+    if (distEcon < 20) return 16;  // Pumpkin farming terraces
+    return 8;
+  }
+}
+
 // Procedural organic map definition representing the massive triple-continent archipelago
 export function generateTileMap(): TileType[][] {
   const map: TileType[][] = [];
