@@ -8,7 +8,7 @@ import {
   drawTileBackground,
   getElevation,
 } from "../utils/metaAssets";
-import { Compass, ZoomIn, ZoomOut, Maximize, Loader, Gift, Key, Sparkles } from "lucide-react";
+import { Compass, ZoomIn, ZoomOut, Maximize, Loader, Gift, Key, Sparkles, CloudRain, Snowflake, Zap, Sun, Flower2, BookOpen, LogOut } from "lucide-react";
 
 interface MapCanvasProps {
   avatarPos: Position;
@@ -78,6 +78,79 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [nearCottage, setNearCottage] = useState<ScholarCottage | null>(null);
   const [nearChest, setNearChest] = useState<CollectibleChest | null>(null);
 
+  // --- Premium Atmospheric & Interior Features ---
+  const [selectedWeather, setSelectedWeather] = useState<"Sunny" | "Rain" | "Snow" | "Storm" | "Sakura">("Sunny");
+  const [activeInterior, setActiveInteriorState] = useState<"turing" | "smith" | "plato" | null>(null);
+  const [interiorPlayer, setInteriorPlayerState] = useState<Position>({ x: 0, y: 3.2 });
+  const [activeDiary, setActiveDiaryState] = useState<"turing" | "smith" | "plato" | null>(null);
+
+  const activeInteriorRef = useRef<"turing" | "smith" | "plato" | null>(null);
+  const interiorPlayerRef = useRef<Position>({ x: 0, y: 3.2 });
+  const activeDiaryRef = useRef<"turing" | "smith" | "plato" | null>(null);
+  const selectedWeatherRef = useRef<string>("Sunny");
+  const weatherParticlesRef = useRef<any[]>([]);
+
+  const setActiveInterior = (val: "turing" | "smith" | "plato" | null) => {
+    activeInteriorRef.current = val;
+    setActiveInteriorState(val);
+  };
+  const setInteriorPlayer = (val: Position) => {
+    interiorPlayerRef.current = val;
+    setInteriorPlayerState(val);
+  };
+  const setActiveDiary = (val: "turing" | "smith" | "plato" | null) => {
+    activeDiaryRef.current = val;
+    setActiveDiaryState(val);
+  };
+
+  useEffect(() => {
+    selectedWeatherRef.current = selectedWeather;
+  }, [selectedWeather]);
+
+  // Persistent Fog of War
+  const [revealedSet, setRevealedSet] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem("fv_revealed_tiles");
+    if (saved) {
+      try {
+        const arr = JSON.parse(saved);
+        return new Set(arr);
+      } catch (e) {}
+    }
+    // Pre-reveal start corridor and landmarks
+    const initial = new Set<string>();
+    // Pre-reveal: Starting overworld bridge area
+    for (let c = 42; c <= 58; c++) {
+      for (let r = 14; r <= 32; r++) {
+        initial.add(`${c},${r}`);
+      }
+    }
+    // Pre-reveal around Islands so scholars are visible
+    // Alan Turing: x: 450, y: 690 (~ c: 14, r: 21)
+    for (let c = 8; c <= 20; c++) {
+      for (let r = 16; r <= 26; r++) {
+        initial.add(`${c},${r}`);
+      }
+    }
+    // Adam Smith: x: 2490, y: 465 (~ c: 77, r: 14)
+    for (let c = 72; c <= 84; c++) {
+      for (let r = 10; r <= 20; r++) {
+        initial.add(`${c},${r}`);
+      }
+    }
+    // Plato: x: 1550, y: 2170 (~ c: 48, r: 67)
+    for (let c = 42; c <= 54; c++) {
+      for (let r = 62; r <= 72; r++) {
+        initial.add(`${c},${r}`);
+      }
+    }
+    return initial;
+  });
+
+  const revealedSetRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    revealedSetRef.current = revealedSet;
+  }, [revealedSet]);
+
   // Mouse Drag / Free Pan trackers
   const isDraggingRef = useRef<boolean>(false);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -114,18 +187,67 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         keysPressedRef.current = {};
         return;
       }
-      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", "Space", "Enter"].includes(e.code)) {
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", "Space", "Enter", "Escape"].includes(e.code)) {
         e.preventDefault();
       }
-      if (e.code === "Space" || e.code === "Enter") {
-        if (nearCottageRef.current) {
-          onNearCottage(nearCottageRef.current);
-          return;
-        } else if (nearChestRef.current) {
-          onOpenChest(nearChestRef.current.id);
+
+      // 1. If currently inside a cottage scholar interior
+      if (activeInteriorRef.current) {
+        if (e.code === "Escape") {
+          // Exit interior completely
+          const prevInt = activeInteriorRef.current;
+          setActiveInterior(null);
+          setActiveDiary(null);
+          if (prevInt === "turing") posRef.current = { x: 450, y: 720 };
+          else if (prevInt === "smith") posRef.current = { x: 2490, y: 495 };
+          else posRef.current = { x: 1550, y: 2200 };
+          setAvatarPos({ ...posRef.current });
+          targetRef.current = { ...posRef.current };
+          setTargetPos({ ...posRef.current });
           return;
         }
+
+        if (e.code === "Space" || e.code === "Enter") {
+          // Check proximity to Scholar at (0, -2.2)
+          const distToScholar = Math.hypot(interiorPlayerRef.current.x, interiorPlayerRef.current.y - (-2.2));
+          if (distToScholar < 1.6) {
+            const currentCottage = cottages.find(cot => cot.id.toLowerCase().includes(activeInteriorRef.current || ""));
+            if (currentCottage) {
+              onNearCottage(currentCottage);
+            }
+            return;
+          }
+
+          // Check proximity to Desk / Scrolls at x <= -1.8 or x >= 1.8 and y <= -1.0
+          const nearWorkdesk = (Math.abs(interiorPlayerRef.current.x) > 1.6 && interiorPlayerRef.current.y < -0.6) || (interiorPlayerRef.current.y < -2.2);
+          if (nearWorkdesk) {
+            if (activeDiaryRef.current) {
+              setActiveDiary(null); // Close
+            } else {
+              setActiveDiary(activeInteriorRef.current); // Open this scholar's diary
+            }
+            return;
+          }
+        }
+      } else {
+        // 2. Overworld Interactions
+        if (e.code === "Space" || e.code === "Enter") {
+          if (nearCottageRef.current) {
+            // ENTER THE COTTAGE INTERIOR!
+            const isTuring = nearCottageRef.current.id.includes("logic") || nearCottageRef.current.id.includes("turing");
+            const isSmith = nearCottageRef.current.id.includes("market") || nearCottageRef.current.id.includes("smith");
+            const intType = isTuring ? "turing" : isSmith ? "smith" : "plato";
+            setActiveInterior(intType);
+            setInteriorPlayer({ x: 0, y: 3.2 });
+            keysPressedRef.current = {};
+            return;
+          } else if (nearChestRef.current) {
+            onOpenChest(nearChestRef.current.id);
+            return;
+          }
+        }
       }
+
       keysPressedRef.current[e.code] = true;
     };
 
@@ -140,7 +262,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [isDialogueOpen]);
+  }, [isDialogueOpen, cottages, onNearCottage, onOpenChest]);
 
   // Set up responsive dimension observer on container resize
   useEffect(() => {
@@ -311,7 +433,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (curC >= 0 && curC < 100 && curR >= 0 && curR < 80) {
         const curElev = getElevation(curC, curR);
         const targetElev = getElevation(c, r);
-        if (Math.abs(targetElev - curElev) > 16) {
+        // Relax clifftop checks slightly to 24 to prevent sticking, but retain solid ridge barriers!
+        if (Math.abs(targetElev - curElev) > 24) {
           return false; // too steep to walk up!
         }
       }
@@ -320,13 +443,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     const checkWalkable = (x: number, y: number): boolean => {
       // Anchoring character foot boundaries nicely to allow snug traversals (character is 32px height)
-      const feetY = y + 12;
+      // We reduce check points to 3 close points to make movement extremely smooth and prevent collision bugs!
+      const feetY = y + 11;
       const points = [
         { x: x, y: feetY }, // Foot base center
-        { x: x - 6, y: feetY }, // Left foot edge
-        { x: x + 6, y: feetY }, // Right foot edge
-        { x: x, y: feetY - 4 }, // Top anchor line
-        { x: x, y: feetY + 4 }, // Bottom anchor line
+        { x: x - 4, y: feetY }, // Left foot edge
+        { x: x + 4, y: feetY }, // Right foot edge
       ];
       return points.every((pt) => isWalkable(pt.x, pt.y));
     };
@@ -343,111 +465,193 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       frameTick++;
       setTick(frameTick);
 
-      // 1. Keyboard Controls Input
-      let kdx = 0;
-      let kdy = 0;
+      // --- SCENE ROUTER: INTERIOR CABIN ROOM vs MAIN OVERWORLD ---
+      if (activeInteriorRef.current) {
+        // 1. Cozy Cabin Walk physics
+        let ix = 0;
+        let iy = 0;
+        if (keysPressedRef.current["ArrowUp"] || keysPressedRef.current["KeyW"]) {
+          iy -= 1;
+          directionRef.current = "up";
+        }
+        if (keysPressedRef.current["ArrowDown"] || keysPressedRef.current["KeyS"]) {
+          iy += 1;
+          directionRef.current = "down";
+        }
+        if (keysPressedRef.current["ArrowLeft"] || keysPressedRef.current["KeyA"]) {
+          ix -= 1;
+          directionRef.current = "left";
+        }
+        if (keysPressedRef.current["ArrowRight"] || keysPressedRef.current["KeyD"]) {
+          ix += 1;
+          directionRef.current = "right";
+        }
 
-      if (keysPressedRef.current["ArrowUp"] || keysPressedRef.current["KeyW"]) kdy -= 1;
-      if (keysPressedRef.current["ArrowDown"] || keysPressedRef.current["KeyS"]) kdy += 1;
-      if (keysPressedRef.current["ArrowLeft"] || keysPressedRef.current["KeyA"]) kdx -= 1;
-      if (keysPressedRef.current["ArrowRight"] || keysPressedRef.current["KeyD"]) kdx += 1;
+        const keyboardInside = ix !== 0 || iy !== 0;
+        if (keyboardInside) {
+          isWalkingRef.current = true;
+          const length = Math.hypot(ix, iy);
+          const speed = 0.12; // cozy speed inside
+          const nextIX = Math.max(-4.2, Math.min(4.2, interiorPlayerRef.current.x + (ix / length) * speed));
+          const nextIY = Math.max(-4.2, Math.min(4.2, interiorPlayerRef.current.y + (iy / length) * speed));
 
-      const keyboardMoving = kdx !== 0 || kdy !== 0;
+          // Physical collisions to avoid table, hearth, and dividers!
+          let canWalk = true;
+          if (nextIY < -1.0 && nextIY > -2.5 && nextIX > -2.3 && nextIX < 2.3) {
+            canWalk = false; // blocks desk table
+          }
+          if (nextIY < -3.2) {
+            canWalk = false; // blocks fireplace
+          }
 
-      if (keyboardMoving) {
-        isWalkingRef.current = true;
-        // Erase mouse travel target to prevent conflict
-        targetRef.current = { ...posRef.current };
+          if (canWalk) {
+            setInteriorPlayer({ x: nextIX, y: nextIY });
+          }
 
-        // Normalize movement speed
-        const length = Math.hypot(kdx, kdy);
-        const speed = 4.3; // responsive walking speed for grand map
-        const stepX = (kdx / length) * speed;
-        const stepY = (kdy / length) * speed;
-
-        // Determine face direction based on larger axis displacement
-        if (Math.abs(kdx) >= Math.abs(kdy)) {
-          directionRef.current = kdx > 0 ? "right" : "left";
+          // Stepping on Door Rug triggers smooth exit!
+          if (nextIY > 3.9 && Math.abs(nextIX) < 1.0) {
+            const prevInt = activeInteriorRef.current;
+            setActiveInterior(null);
+            setActiveDiary(null);
+            if (prevInt === "turing") posRef.current = { x: 450, y: 720 };
+            else if (prevInt === "smith") posRef.current = { x: 2490, y: 495 };
+            else posRef.current = { x: 1550, y: 2200 };
+            setAvatarPos({ ...posRef.current });
+            targetRef.current = { ...posRef.current };
+            setTargetPos({ ...posRef.current });
+          }
         } else {
-          directionRef.current = kdy > 0 ? "down" : "up";
+          isWalkingRef.current = false;
         }
 
-        // Try moving horizontally and vertically separately (snug sliding along riverbanks!)
-        const nextX = posRef.current.x + stepX;
-        const nextY = posRef.current.y + stepY;
-
-        let movedX = false;
-        let movedY = false;
-
-        if (checkWalkable(nextX, posRef.current.y)) {
-          posRef.current.x = Math.max(15, Math.min(3185, nextX));
-          movedX = true;
-        }
-        if (checkWalkable(posRef.current.x, nextY)) {
-          posRef.current.y = Math.max(15, Math.min(2545, nextY));
-          movedY = true;
-        }
-
-        // Apply fallback diagonal check if separate sliding didn't fire
-        if (!movedX && !movedY && checkWalkable(nextX, nextY)) {
-          posRef.current.x = Math.max(15, Math.min(3185, nextX));
-          posRef.current.y = Math.max(15, Math.min(2545, nextY));
-        }
-
-        // Sync to parent React state
-        setAvatarPos({ x: posRef.current.x, y: posRef.current.y });
-
-        // Proximity checks for uncompleted milestones
-        for (const node of LANDMARKS) {
-          const solved = solvedNodeIds.includes(node.id);
-          if (!solved) {
-            const dist = Math.hypot(node.x - posRef.current.x, node.y - posRef.current.y);
-            if (dist < 42 && activeNodeId !== node.id) {
-              isWalkingRef.current = false;
-              keysPressedRef.current = {};
-              onNearNode(node);
-              break;
+      } else {
+        // 2. Main Overworld physics
+        // Update persistent Fog of War
+        const playerC = Math.max(0, Math.min(99, Math.floor(posRef.current.x / 32)));
+        const playerR = Math.max(0, Math.min(79, Math.floor(posRef.current.y / 32)));
+        const fowKey = `${playerC},${playerR}`;
+        if (!revealedSetRef.current.has(fowKey)) {
+          const newFow = new Set(revealedSetRef.current);
+          for (let dr = -6; dr <= 6; dr++) {
+            for (let dc = -6; dc <= 6; dc++) {
+              if (dc * dc + dr * dr <= 38) { // standard circular reveal scope
+                const tc = playerC + dc;
+                const tr = playerR + dr;
+                if (tc >= 0 && tc < 100 && tr >= 0 && tr < 80) {
+                  newFow.add(`${tc},${tr}`);
+                }
+              }
             }
           }
+          setRevealedSet(newFow);
+          localStorage.setItem("fv_revealed_tiles", JSON.stringify(Array.from(newFow)));
         }
-      } else {
-        // 2. Mouse Click Target Navigation
-        const dx = targetRef.current.x - posRef.current.x;
-        const dy = targetRef.current.y - posRef.current.y;
-        const distance = Math.hypot(dx, dy);
 
-        if (distance > 3) {
+        let kdx = 0;
+        let kdy = 0;
+
+        if (keysPressedRef.current["ArrowUp"] || keysPressedRef.current["KeyW"]) {
+          kdy -= 1;
+        }
+        if (keysPressedRef.current["ArrowDown"] || keysPressedRef.current["KeyS"]) {
+          kdy += 1;
+        }
+        if (keysPressedRef.current["ArrowLeft"] || keysPressedRef.current["KeyA"]) {
+          kdx -= 1;
+        }
+        if (keysPressedRef.current["ArrowRight"] || keysPressedRef.current["KeyD"]) {
+          kdx += 1;
+        }
+
+        const keyboardMoving = kdx !== 0 || kdy !== 0;
+
+        if (keyboardMoving) {
           isWalkingRef.current = true;
-          const speed = 4.3;
-          const angle = Math.atan2(dy, dx);
-          const stepX = Math.cos(angle) * speed;
-          const stepY = Math.sin(angle) * speed;
+          targetRef.current = { ...posRef.current };
 
-          // Determine visual facing direction
-          const absDx = Math.abs(dx);
-          const absDy = Math.abs(dy);
-          if (absDx > absDy) {
-            directionRef.current = dx > 0 ? "right" : "left";
+          const length = Math.hypot(kdx, kdy);
+          const speed = 4.3; // responsive overworld velocity
+          const stepX = (kdx / length) * speed;
+          const stepY = (kdy / length) * speed;
+
+          if (Math.abs(kdx) >= Math.abs(kdy)) {
+            directionRef.current = kdx > 0 ? "right" : "left";
           } else {
-            directionRef.current = dy > 0 ? "down" : "up";
+            directionRef.current = kdy > 0 ? "down" : "up";
           }
 
           const nextX = posRef.current.x + stepX;
           const nextY = posRef.current.y + stepY;
 
-          let moved = false;
-          // Apply sliding collision checks
+          let movedX = false;
+          let movedY = false;
+
+          // Slide responses along obstacles
           if (checkWalkable(nextX, posRef.current.y)) {
             posRef.current.x = Math.max(15, Math.min(3185, nextX));
-            moved = true;
+            movedX = true;
           }
           if (checkWalkable(posRef.current.x, nextY)) {
             posRef.current.y = Math.max(15, Math.min(2545, nextY));
-            moved = true;
+            movedY = true;
           }
 
-          if (!moved && checkWalkable(nextX, nextY)) {
+          if (!movedX && !movedY && checkWalkable(nextX, nextY)) {
             posRef.current.x = Math.max(15, Math.min(3185, nextX));
+            posRef.current.y = Math.max(15, Math.min(2545, nextY));
+          }
+
+          setAvatarPos({ x: posRef.current.x, y: posRef.current.y });
+
+          // Socratic milestone gates
+          for (const node of LANDMARKS) {
+            const solved = solvedNodeIds.includes(node.id);
+            if (!solved) {
+              const dist = Math.hypot(node.x - posRef.current.x, node.y - posRef.current.y);
+              if (dist < 42 && activeNodeId !== node.id) {
+                isWalkingRef.current = false;
+                keysPressedRef.current = {};
+                onNearNode(node);
+                break;
+              }
+            }
+          }
+        } else {
+          // Click to walk target seeking
+          const dx = targetRef.current.x - posRef.current.x;
+          const dy = targetRef.current.y - posRef.current.y;
+          const distance = Math.hypot(dx, dy);
+
+          if (distance > 3) {
+            isWalkingRef.current = true;
+            const speed = 4.3;
+            const angle = Math.atan2(dy, dx);
+            const stepX = Math.cos(angle) * speed;
+            const stepY = Math.sin(angle) * speed;
+
+            const absDx = Math.abs(dx);
+            const absDy = Math.abs(dy);
+            if (absDx > absDy) {
+              directionRef.current = dx > 0 ? "right" : "left";
+            } else {
+              directionRef.current = dy > 0 ? "down" : "up";
+            }
+
+            const nextX = posRef.current.x + stepX;
+            const nextY = posRef.current.y + stepY;
+
+            let moved = false;
+            if (checkWalkable(nextX, posRef.current.y)) {
+              posRef.current.x = Math.max(15, Math.min(3185, nextX));
+              moved = true;
+            }
+            if (checkWalkable(posRef.current.x, nextY)) {
+              posRef.current.y = Math.max(15, Math.min(2545, nextY));
+              moved = true;
+            }
+
+            if (!moved && checkWalkable(nextX, nextY)) {
+              posRef.current.x = Math.max(15, Math.min(3185, nextX));
             posRef.current.y = Math.max(15, Math.min(2545, nextY));
             moved = true;
           }
@@ -517,6 +721,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         prevNearChestIdRef.current = closestChest?.id || null;
         setNearChest(closestChest);
       }
+    }
 
       // Draw compiled objects onto screen
       draw();
@@ -566,6 +771,376 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       // START ISOMETRIC PROJECTIVE DRAWING LOOPS
       // ----------------------------------------------------
 
+      // --- SUB-SCENE DRAW: SWEET CABIN STUDY INTERIOR ---
+      if (activeInteriorRef.current) {
+        ctx.fillStyle = "#0c111c"; // rich dark cosmic night background
+        ctx.fillRect(0, 0, dimensions.width, dimensions.height);
+
+        // Grid coordinate system projection centered on screen for interior
+        const studyToScreen = (u: number, v: number, h = 0): Position => {
+          // u goes down-right, v goes down-left
+          const rx = (u - v) * 36 * zoom;
+          const ry = (u + v) * 18 * zoom - h * zoom;
+          return {
+            x: dimensions.width / 2 + rx,
+            y: dimensions.height / 2 + ry + 40 * zoom,
+          };
+        };
+
+        const activeIntName = activeInteriorRef.current === "turing"
+          ? "Alan Turing's Cryptographic Study"
+          : activeInteriorRef.current === "smith"
+          ? "Adam Smith's Wealth Registry"
+          : "Plato's Socratic Retreat";
+
+        // Draw nice wood parquet flooring inside cozy cabin
+        for (let u = -4.5; u <= 4.5; u += 1.0) {
+          for (let v = -4.5; v <= 4.5; v += 1.0) {
+            const pTop = studyToScreen(u, v);
+            const pRight = studyToScreen(u + 1.0, v);
+            const pBottom = studyToScreen(u + 1.0, v + 1.0);
+            const pLeft = studyToScreen(u, v + 1.0);
+
+            ctx.fillStyle = (Math.floor(u) + Math.floor(v)) % 2 === 0 ? "#432b1a" : "#321e12"; // mahogany parquet boards
+            ctx.beginPath();
+            ctx.moveTo(pTop.x, pTop.y);
+            ctx.lineTo(pRight.x, pRight.y);
+            ctx.lineTo(pBottom.x, pBottom.y);
+            ctx.lineTo(pLeft.x, pLeft.y);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.strokeStyle = "rgba(40, 24, 15, 0.4)";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+        }
+
+        // Draw Left and Right back rustic wooden brick walls
+        const wh = 75;
+        const pCorner = studyToScreen(-4.5, -4.5);
+        const pLeftWallEnd = studyToScreen(-4.5, 4.5);
+        const pRightWallEnd = studyToScreen(4.5, -4.5);
+
+        const pCornerT = studyToScreen(-4.5, -4.5, wh);
+        const pLeftWallEndT = studyToScreen(-4.5, 4.5, wh);
+        const pRightWallEndT = studyToScreen(4.5, -4.5, wh);
+
+        // Left wall face
+        ctx.fillStyle = "#3e2723"; // warm cedarwood backwall
+        ctx.beginPath();
+        ctx.moveTo(pLeftWallEnd.x, pLeftWallEnd.y);
+        ctx.lineTo(pCorner.x, pCorner.y);
+        ctx.lineTo(pCornerT.x, pCornerT.y);
+        ctx.lineTo(pLeftWallEndT.x, pLeftWallEndT.y);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = "rgba(20, 10, 5, 0.35)";
+        ctx.lineWidth = 1;
+        for (let h = 15; h < wh; h += 20) {
+          const l1 = studyToScreen(-4.5, 4.5, h);
+          const l2 = studyToScreen(-4.5, -4.5, h);
+          ctx.beginPath();
+          ctx.moveTo(l1.x, l1.y);
+          ctx.lineTo(l2.x, l2.y);
+          ctx.stroke();
+        }
+
+        // Right wall face with shading
+        ctx.fillStyle = "#35211c";
+        ctx.beginPath();
+        ctx.moveTo(pRightWallEnd.x, pRightWallEnd.y);
+        ctx.lineTo(pCorner.x, pCorner.y);
+        ctx.lineTo(pCornerT.x, pCornerT.y);
+        ctx.lineTo(pRightWallEndT.x, pRightWallEndT.y);
+        ctx.closePath();
+        ctx.fill();
+
+        for (let h = 15; h < wh; h += 20) {
+          const r1 = studyToScreen(4.5, -4.5, h);
+          const r2 = studyToScreen(-4.5, -4.5, h);
+          ctx.beginPath();
+          ctx.moveTo(r1.x, r1.y);
+          ctx.lineTo(r2.x, r2.y);
+          ctx.stroke();
+        }
+
+        // Draw Big Ornate Crimson Scholar Carpet
+        const rugLt = studyToScreen(-2.0, -2.0);
+        const rugRt = studyToScreen(2.0, -2.0);
+        const rugRb = studyToScreen(2.0, 2.0);
+        const rugLb = studyToScreen(-2.0, 2.0);
+
+        ctx.fillStyle = "#7f1d1d"; // beautiful red fabric
+        ctx.beginPath();
+        ctx.moveTo(rugLt.x, rugLt.y);
+        ctx.lineTo(rugRt.x, rugRt.y);
+        ctx.lineTo(rugRb.x, rugRb.y);
+        ctx.lineTo(rugLb.x, rugLb.y);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = "#eab308"; // golden woven trim borders
+        ctx.lineWidth = 1.5 * zoom;
+        ctx.stroke();
+
+        // Welcome Welcome Door Exit jute rug in front
+        const doorLt = studyToScreen(-1.2, 3.8);
+        const doorRt = studyToScreen(1.2, 3.8);
+        const doorRb = studyToScreen(1.2, 4.5);
+        const doorLb = studyToScreen(-1.2, 4.5);
+        ctx.fillStyle = "#a16207";
+        ctx.beginPath();
+        ctx.moveTo(doorLt.x, doorLt.y);
+        ctx.lineTo(doorRt.x, doorRt.y);
+        ctx.lineTo(doorRb.x, doorRb.y);
+        ctx.lineTo(doorLb.x, doorLb.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "#fef08a";
+        ctx.lineWidth = 1 * zoom;
+        ctx.stroke();
+
+        // Exit Sign Door Frame Outline
+        const doorPos = studyToScreen(0, 4.5);
+        ctx.fillStyle = "#1e1b18";
+        ctx.fillRect(doorPos.x - 30 * zoom, doorPos.y - 12 * zoom, 60 * zoom, 24 * zoom);
+        ctx.font = 'bold 9px "JetBrains Mono", sans-serif';
+        ctx.fillStyle = "#fef08a";
+        ctx.fillText("EXIT DOORWAY", doorPos.x - 32 * zoom, doorPos.y + 4 * zoom);
+
+        // Brick Hearth Fireplace fireplace at corner (-4.5, -4.5)
+        const pFire = studyToScreen(-3.8, -3.8);
+        ctx.fillStyle = "#1e293b"; // cast iron protector shield
+        ctx.fillRect(pFire.x - 22 * zoom, pFire.y - 42 * zoom, 44 * zoom, 44 * zoom);
+        ctx.fillStyle = "#b45309"; // base rustic clay bricks
+        ctx.fillRect(pFire.x - 25 * zoom, pFire.y + 2 * zoom, 50 * zoom, 8 * zoom);
+
+        // Cozy Crackling Fire glowing flare
+        const flamePulse = Math.sin(frameTick * 0.25) * 3 + 13;
+        const gradFire = ctx.createRadialGradient(pFire.x, pFire.y - 14 * zoom, 1 * zoom, pFire.x, pFire.y - 14 * zoom, flamePulse * zoom);
+        gradFire.addColorStop(0, "rgba(249, 115, 22, 1.0)"); // orange heart
+        gradFire.addColorStop(0.5, "rgba(239, 68, 68, 0.75)"); // red warmth
+        gradFire.addColorStop(1, "rgba(253, 224, 71, 0)"); // fading glow spark
+        ctx.fillStyle = gradFire;
+        ctx.beginPath();
+        ctx.arc(pFire.x, pFire.y - 14 * zoom, flamePulse * zoom, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Warm stove sparks floating upwards
+        ctx.fillStyle = "rgba(253, 224, 71, 0.9)";
+        for (let i = 0; i < 6; i++) {
+          const sparkOffset = (frameTick * 1.5 + i * 20) % 50;
+          const sx = pFire.x + Math.sin(frameTick * 0.05 + i * 3) * 11 * zoom;
+          const sy = pFire.y - 14 * zoom - sparkOffset * zoom * 0.75;
+          ctx.beginPath();
+          ctx.arc(sx, sy, (1 + Math.random() * 1.5) * zoom, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Heavy dark wood study cabinet bookcases with shelves on left wall
+        const pRackL = studyToScreen(-4.5, -1.0);
+        ctx.fillStyle = "#1e1008";
+        ctx.fillRect(pRackL.x - 14 * zoom, pRackL.y - 65 * zoom, 28 * zoom, 60 * zoom);
+        ctx.strokeStyle = "#eab308";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(pRackL.x - 14 * zoom, pRackL.y - 65 * zoom, 28 * zoom, 60 * zoom);
+
+        const bookColors = ["#ef4444", "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6"];
+        for (let row = 0; row < 3; row++) {
+          const rh = pRackL.y - 60 * zoom + row * 18 * zoom;
+          ctx.fillStyle = "#3e2723";
+          ctx.fillRect(pRackL.x - 12 * zoom, rh, 24 * zoom, 3 * zoom); // shelf slat
+          for (let b = 0; b < 6; b++) {
+            ctx.fillStyle = bookColors[(row * 7 + b) % bookColors.length];
+            ctx.fillRect(pRackL.x - 10 * zoom + b * 3 * zoom, rh - 13 * zoom, 2.5 * zoom, 13 * zoom);
+          }
+        }
+
+        // Heavy Oak Research Desk at top (0, -2.0)
+        const pDesk = studyToScreen(0, -2.0);
+        ctx.fillStyle = "#27160c"; // shadows
+        ctx.fillRect(pDesk.x - 30 * zoom, pDesk.y - 3 * zoom, 10 * zoom, 6 * zoom);
+        ctx.fillRect(pDesk.x + 20 * zoom, pDesk.y - 3 * zoom, 10 * zoom, 6 * zoom);
+
+        ctx.fillStyle = "#5c3317"; // heavy desk mahogany top slab
+        ctx.fillRect(pDesk.x - 34 * zoom, pDesk.y - 14 * zoom, 68 * zoom, 14 * zoom);
+        ctx.strokeStyle = "#7c2d12";
+        ctx.lineWidth = 1.8;
+        ctx.strokeRect(pDesk.x - 34 * zoom, pDesk.y - 14 * zoom, 68 * zoom, 14 * zoom);
+
+        ctx.fillStyle = "#f8fafc"; // white paper scrolls
+        ctx.fillRect(pDesk.x - 14 * zoom, pDesk.y - 16 * zoom, 12 * zoom, 4 * zoom);
+        ctx.fillStyle = "#1e293b"; // glass inkwell
+        ctx.fillRect(pDesk.x + 12 * zoom, pDesk.y - 17 * zoom, 4 * zoom, 3 * zoom);
+        ctx.strokeStyle = "#ffffff"; // feather quill pen
+        ctx.beginPath();
+        ctx.moveTo(pDesk.x + 14 * zoom, pDesk.y - 17 * zoom);
+        ctx.lineTo(pDesk.x + 18 * zoom, pDesk.y - 25 * zoom);
+        ctx.stroke();
+
+        // Flickering brass reading candle lamp
+        const candleGlow = Math.sin(frameTick * 0.16) * 1.8 + 8.5;
+        ctx.fillStyle = "#fbbf24";
+        ctx.fillRect(pDesk.x - 26 * zoom, pDesk.y - 20 * zoom, 3 * zoom, 6 * zoom);
+        const candleGrad = ctx.createRadialGradient(pDesk.x - 24.5 * zoom, pDesk.y - 22 * zoom, 1 * zoom, pDesk.x - 24.5 * zoom, pDesk.y - 22 * zoom, candleGlow * zoom);
+        candleGrad.addColorStop(0, "rgba(251, 191, 36, 1.0)");
+        candleGrad.addColorStop(1, "rgba(251, 191, 36, 0)");
+        ctx.fillStyle = candleGrad;
+        ctx.beginPath();
+        ctx.arc(pDesk.x - 24.5 * zoom, pDesk.y - 22 * zoom, candleGlow * zoom, 0, Math.PI * 2);
+        ctx.fill();
+
+        // --- RENDER THE HOST SCHOLAR ---
+        const scholarU = 0;
+        const scholarV = -2.2;
+        const pScholar = studyToScreen(scholarU, scholarV);
+
+        ctx.fillStyle = "rgba(0,0,0,0.35)";
+        ctx.beginPath();
+        ctx.ellipse(pScholar.x, pScholar.y, 10 * zoom, 4 * zoom, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.save();
+        ctx.translate(pScholar.x, pScholar.y);
+        ctx.scale(zoom, zoom);
+
+        const schBob = Math.sin(frameTick * 0.05) * 1.5;
+        ctx.translate(0, schBob);
+
+        if (activeInteriorRef.current === "turing") {
+          ctx.fillStyle = "#4b5563"; // coat gray Tweed
+          ctx.fillRect(-8, -26, 16, 26);
+          ctx.fillStyle = "#e0f2fe"; // blue collar shirt
+          ctx.fillRect(-3, -26, 6, 8);
+          ctx.fillStyle = "#ef4444"; // red little tie
+          ctx.fillRect(-1.5, -23, 3, 7);
+          ctx.fillStyle = "#fbcfe8"; // skin peach
+          ctx.beginPath();
+          ctx.arc(0, -32, 7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#1f2937"; // black short hair
+          ctx.fillRect(-8, -39, 16, 6);
+        } else if (activeInteriorRef.current === "smith") {
+          ctx.fillStyle = "#047857"; // velvet emerald green tailcoat
+          ctx.fillRect(-9, -26, 18, 26);
+          ctx.fillStyle = "#fbbf24"; // golden epaulets
+          ctx.fillRect(-9, -26, 2, 4);
+          ctx.fillRect(7, -26, 2, 4);
+          ctx.fillStyle = "#ffffff"; // huge white philosopher cravat ruffle collar scarf
+          ctx.fillRect(-4, -26, 8, 9);
+          ctx.fillStyle = "#fbcfe8";
+          ctx.beginPath();
+          ctx.arc(0, -32, 7.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#d1d5db"; // powder gray wig curls
+          ctx.beginPath();
+          ctx.arc(-8, -32, 4.5, 0, Math.PI * 2);
+          ctx.arc(8, -32, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillRect(-8, -38, 16, 6);
+        } else {
+          ctx.fillStyle = "#d1d5db"; // stone white toga folds
+          ctx.beginPath();
+          ctx.moveTo(-10, 0);
+          ctx.lineTo(-4, -26);
+          ctx.lineTo(8, -26);
+          ctx.lineTo(10, 0);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = "#93c5fd"; // light sapphire blue draped shawl cross body
+          ctx.beginPath();
+          ctx.moveTo(-8, -24);
+          ctx.lineTo(8, -10);
+          ctx.lineTo(4, -4);
+          ctx.lineTo(-6, -18);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = "#fdebdb"; // face peach
+          ctx.beginPath();
+          ctx.arc(0, -32, 7, 0, Math.PI * 2);
+          ctx.fill();
+          // Majestic flowing white philosophical beard!
+          ctx.fillStyle = "#f3f4f6";
+          ctx.beginPath();
+          ctx.moveTo(-5, -30);
+          ctx.lineTo(5, -30);
+          ctx.lineTo(3, -15);
+          ctx.lineTo(0, -10);
+          ctx.lineTo(-3, -15);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = "#e5e7eb"; // gray hair
+          ctx.fillRect(-7, -39, 14, 6);
+        }
+
+        ctx.restore();
+
+        // Dialogue callout tag floating
+        ctx.fillStyle = "rgba(124, 58, 237, 0.12)";
+        ctx.strokeStyle = "rgba(167, 139, 250, 0.6)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(pScholar.x, pScholar.y - 48 * zoom, 46 * zoom, 12 * zoom, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.font = 'bold 9.5px "JetBrains Mono", monospace';
+        ctx.fillStyle = "#a78bfa";
+        ctx.fillText("CONSULT [SPACE]", pScholar.x - 41 * zoom, pScholar.y - 45 * zoom);
+
+        // --- DRAW ENTRANTE USER PLAYER SPIRAL CHARACTER ---
+        const pPlayer = studyToScreen(interiorPlayerRef.current.x, interiorPlayerRef.current.y);
+        ctx.fillStyle = "rgba(0,0,0,0.4)";
+        ctx.beginPath();
+        ctx.ellipse(pPlayer.x, pPlayer.y, 11 * zoom, 4.5 * zoom, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (avatarConfig) {
+          ctx.save();
+          ctx.translate(pPlayer.x - 32 * zoom, pPlayer.y - 30 * zoom);
+          const walkFr = Math.floor(frameTick / 6) % 4;
+          drawCompositedAvatar(ctx, 0, 0, avatarConfig, directionRef.current, walkFr, isWalkingRef.current);
+          ctx.restore();
+        }
+
+        // Floating hints relative to player surroundings
+        const distScholar = Math.hypot(interiorPlayerRef.current.x, interiorPlayerRef.current.y - scholarV);
+        if (distScholar < 1.6) {
+          ctx.fillStyle = "#fef08a";
+          ctx.font = 'bold 11px "JetBrains Mono", sans-serif';
+          ctx.fillText("Press Space/Enter to hold counsel", pPlayer.x - 90 * zoom, pPlayer.y + 22 * zoom);
+        } else {
+          const nearDesk = (Math.abs(interiorPlayerRef.current.x) > 1.6 && interiorPlayerRef.current.y < -0.6) || (interiorPlayerRef.current.y < -2.2);
+          if (nearDesk) {
+            ctx.fillStyle = "#67e8f9";
+            ctx.font = 'bold 11px "JetBrains Mono", sans-serif';
+            ctx.fillText("Press Space/Enter to read Diary Scroll", pPlayer.x - 120 * zoom, pPlayer.y + 22 * zoom);
+          }
+        }
+
+        // Room Banner UI
+        ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
+        ctx.fillRect(8, 48, dimensions.width - 16, 26);
+        ctx.strokeStyle = "#a16207";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(8, 48, dimensions.width - 16, 26);
+        ctx.fillStyle = "#fef08a";
+        ctx.font = 'bold 10px "JetBrains Mono", monospace';
+        ctx.fillText(`🏠 ENTERED: ${activeIntName.toUpperCase()}  (COZY ARTIFACT STUDY)`, 22, 64);
+
+        // Escape helper toast floating bottom-center
+        ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+        ctx.fillRect(dimensions.width / 2 - 120, dimensions.height - 35, 240, 22);
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = '9px "JetBrains Mono", monospace';
+        ctx.fillText("PRESS [ESC] OR WALK DOWN TO EXIT CABIN SHACK", dimensions.width / 2 - 105, dimensions.height - 21);
+
+        ctx.restore();
+        return; // Early return to completely skip overworld rendering when inside!
+      }
+
       // 1. DYNAMIC WATER BACKGROUND & SEWN MAP TILES (WITH 3D ELEVATION HILLS!)
       const viewRadius = Math.ceil(Math.max(dimensions.width, dimensions.height) / (32 * zoom)) + 4;
       const camCol = Math.floor(cameraRef.current.x / 32);
@@ -596,6 +1171,30 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             (pLeft.y < -margin && pRight.y < -margin && pTop.y < -margin && pBottom.y < -margin) ||
             (pLeft.y > dimensions.height + margin && pRight.y > dimensions.height + margin && pTop.y > dimensions.height + margin && pBottom.y > dimensions.height + margin)
           ) {
+            continue;
+          }
+
+          // Fog of War (FOW) Checks
+          const tileKey = `${c},${r}`;
+          const isRevealed = revealedSetRef.current.has(tileKey);
+          const playerDist = Math.hypot(c * 32 - posRef.current.x, r * 32 - posRef.current.y);
+          const isDirectSight = playerDist < 200; // sight scope around 6-7 tiles
+
+          if (!isRevealed && !isDirectSight) {
+            ctx.fillStyle = "#0c1322"; // pitch black unexplored dynamic fog of war
+            ctx.beginPath();
+            ctx.moveTo(pTop.x, pTop.y);
+            ctx.lineTo(pRight.x, pRight.y);
+            ctx.lineTo(pBottom.x, pBottom.y);
+            ctx.lineTo(pLeft.x, pLeft.y);
+            ctx.closePath();
+            ctx.fill();
+
+            if ((c * 17 + r * 13) % 23 === 0) {
+              ctx.fillStyle = "rgba(100, 116, 139, 0.18)";
+              ctx.font = '9px "JetBrains Mono", monospace';
+              ctx.fillText("?", (pTop.x + pBottom.x) / 2 - 2, (pTop.y + pBottom.y) / 2 + 3);
+            }
             continue;
           }
 
@@ -696,6 +1295,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             ctx.lineTo(pBottom.x, pBottom.y);
             ctx.lineTo(pBottomD.x, pBottomD.y);
             ctx.lineTo(pRightD.x, pRightD.y);
+            ctx.closePath();
+            ctx.fill();
+          }
+
+          // Shroud Memory overlay
+          if (!isDirectSight) {
+            ctx.fillStyle = "rgba(12, 19, 34, 0.52)"; // twilight memory ink shroud
+            ctx.beginPath();
+            ctx.moveTo(pTop.x, pTop.y);
+            ctx.lineTo(pRight.x, pRight.y);
+            ctx.lineTo(pBottom.x, pBottom.y);
+            ctx.lineTo(pLeft.x, pLeft.y);
             ctx.closePath();
             ctx.fill();
           }
@@ -1930,6 +2541,92 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.fillRect(viewportLeft, viewportTop, viewportRight - viewportLeft, viewportBottom - viewportTop);
       }
 
+      // --- SCREEN-SPACE ATMOSPHERIC WEATHER BOX PARTICLES ---
+      const activeWeather = selectedWeatherRef.current;
+      if (activeWeather !== "Sunny") {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0); // reset camera transforms to paint in screen pixel-space!
+
+        // initialize dynamic weather particles if empty
+        if (!weatherParticlesRef.current || weatherParticlesRef.current.length === 0) {
+          const list = [];
+          for (let i = 0; i < 160; i++) {
+            list.push({
+              x: Math.random() * dimensions.width,
+              y: Math.random() * dimensions.height,
+              speed: 4 + Math.random() * 6,
+              size: 1 + Math.random() * 3,
+              angle: Math.PI / 3 + Math.random() * 0.15,
+              drift: Math.random() * 100
+            });
+          }
+          weatherParticlesRef.current = list;
+        }
+
+        if (activeWeather === "Rain" || activeWeather === "Storm") {
+          ctx.strokeStyle = activeWeather === "Storm" ? "rgba(186, 230, 253, 0.45)" : "rgba(14, 165, 233, 0.35)";
+          ctx.lineWidth = activeWeather === "Storm" ? 1.5 : 1.0;
+          
+          // Severe thunder lightning flash selector in Storm mod
+          if (activeWeather === "Storm" && frameTick % 220 < 4) {
+            ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+            ctx.fillRect(0, 0, dimensions.width, dimensions.height);
+          }
+
+          weatherParticlesRef.current.forEach((p) => {
+            p.y += p.speed * 1.6;
+            p.x += Math.cos(p.angle) * p.speed;
+
+            if (p.y > dimensions.height || p.x > dimensions.width) {
+              p.y = -10;
+              p.x = Math.random() * dimensions.width;
+            }
+
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p.x + Math.cos(p.angle) * 12, p.y + 12);
+            ctx.stroke();
+          });
+        } else if (activeWeather === "Snow") {
+          ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+          weatherParticlesRef.current.forEach((p) => {
+            p.y += p.speed * 0.28;
+            p.x += Math.sin(frameTick * 0.02 + p.drift) * 0.6;
+
+            if (p.y > dimensions.height) {
+              p.y = -6;
+              p.x = Math.random() * dimensions.width;
+            }
+
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size * 0.85, 0, Math.PI * 2);
+            ctx.fill();
+          });
+        } else if (activeWeather === "Sakura") {
+          ctx.fillStyle = "rgba(251, 113, 133, 0.75)"; // beautiful pink cherry sakura petals
+          weatherParticlesRef.current.forEach((p, idx) => {
+            p.y += p.speed * 0.22;
+            p.x += Math.sin(frameTick * 0.015 + p.drift) * 0.8 + 0.3;
+
+            if (p.y > dimensions.height) {
+              p.y = -6;
+              p.x = Math.random() * dimensions.width;
+            }
+
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(frameTick * 0.01 + idx);
+            // draw tiny slender sakura petal leaf
+            ctx.beginPath();
+            ctx.ellipse(0, 0, p.size * 1.5, p.size * 0.8, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          });
+        }
+
+        ctx.restore();
+      }
+
       ctx.restore();
       // ----------------------------------------------------
       // END CAMERA TRANSFORMS
@@ -2047,6 +2744,32 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         </div>
       </div>
 
+      {/* 2.5 Dynamic Weather Box Control HUD */}
+      <div className="absolute top-[178px] left-3 bg-[#fdf6e2] border-2 border-[#7c2d12] rounded-lg p-2 shadow-md flex flex-col space-y-1 z-10 font-mono text-[#3c2f2f] max-w-[150px]">
+        <span className="text-[9.5px] uppercase font-black tracking-widest text-[#7c2d12] border-b border-[#7c2d12]/20 pb-0.5 flex items-center space-x-1">
+          <span>🌀 Weather Box</span>
+        </span>
+        <div className="grid grid-cols-2 gap-1 mt-1">
+          {(["Sunny", "Rain", "Snow", "Storm", "Sakura"] as const).map((w) => {
+            const isActive = selectedWeather === w;
+            return (
+              <button
+                key={w}
+                onClick={() => setSelectedWeather(w)}
+                className={`text-[8px] font-bold px-1.5 py-1 rounded border transition-colors cursor-pointer flex items-center justify-center space-x-0.5 ${
+                  isActive
+                    ? "bg-[#7c1d12] text-amber-100 border-[#7c1d12]"
+                    : "bg-amber-100/65 hover:bg-amber-200/80 text-[#3c2f2f] border-amber-990/15"
+                }`}
+              >
+                <span>{w === "Sunny" ? "☀️" : w === "Rain" ? "🌧️" : w === "Snow" ? "❄️" : w === "Storm" ? "⚡" : "🌸"}</span>
+                <span>{w}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* 3. Infinite Zoom Slider Widget */}
       <div className="absolute bottom-3 right-3 bg-[#fdf6e2] border-2 border-[#7c2d12] rounded-lg p-2.5 shadow-md flex items-center space-x-2.5 z-10 font-mono text-[#3c2f2f] min-w-[210px]">
         <button
@@ -2100,6 +2823,91 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           <div className="text-[9.5px] text-[#7d4115] font-semibold italic mt-1 border-t border-[#7c2d12]/15 pt-1.5 flex items-center justify-between">
             <span>Grid Coordinates: ({hoveredNode.x}, {hoveredNode.y})</span>
             <span className="animate-pulse">Click here &rarr;</span>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Scholar's Historic Research Diary Scroll Overlay */}
+      {activeDiary && (
+        <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm z-[40] flex items-center justify-center p-6">
+          <div className="relative bg-[#f5ecdf] border-4 border-double border-[#5c3317] rounded-xl max-w-lg w-full p-6 shadow-2xl font-serif text-[#2e1a0c] animate-in fade-in zoom-in-95 duration-200">
+            {/* Antique Scroll handles top / bottom */}
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#3e2311] text-[#fef08a] px-3.5 py-1 rounded-full text-[10px] font-mono tracking-widest uppercase border border-[#7c2d12]">
+              📜 ANCIENT SCIENTIFIC JOURNAL
+            </div>
+            
+            <button
+              onClick={() => setActiveDiary(null)}
+              className="absolute top-2.5 right-3 text-[#5c3317]/60 hover:text-[#5c3317] font-sans font-black text-xs cursor-pointer"
+            >
+              ✕ CLOSE
+            </button>
+
+            <div className="border-b-2 border-[#5c3317]/20 pb-2 mb-3 mt-2 text-center">
+              <h2 className="text-xl font-bold tracking-tight text-[#5c3317]">
+                {activeDiary === "turing"
+                  ? "Alan Turing: Decrypting the Infinite"
+                  : activeDiary === "smith"
+                  ? "Adam Smith: The Wealth Mechanism Ledger"
+                  : "Plato: Dialogues on Ideal Forms"}
+              </h2>
+              <p className="text-[10px] font-mono tracking-wider opacity-60 uppercase mt-0.5">
+                Archived Scholar Logs • Deciphered Scroll
+              </p>
+            </div>
+
+            <div className="max-h-[250px] overflow-y-auto pr-1 text-xs leading-relaxed space-y-3.5 text-justify italic font-serif">
+              {activeDiary === "turing" ? (
+                <>
+                  <p>
+                    <strong>Entry Log 101.A:</strong> "We can build a universal machine capable of simulating any discrete state transition sequences. If can encode instruction algorithms directly upon a linear paper ribbon tape, the boundaries between hardware structures and instruction symbols dissolve completely."
+                  </p>
+                  <p>
+                    <strong>Observation On Decidability:</strong> "Alas! The Halting Problem proves forever that no single general algorithm can determine if an arbitrary computation will settle or loop in infinity. The bounds of logic are mathematically absolute. Yet, in this infinite field of the unknown, mechanical intelligence sparkles with endless imitation."
+                  </p>
+                  <p>
+                    <strong>Turing's Reflection:</strong> "Humanity asks, can active machines play the Imitation Game? When looking at responses, do we measure purely physical sparks, or the semantic truth of reasoning? I suspect intelligence is a collective field, much like the ocean surrounding these islands."
+                  </p>
+                </>
+              ) : activeDiary === "smith" ? (
+                <>
+                  <p>
+                    <strong>Chapter IV Ledger:</strong> "The greatest improvement in the productive powers of labor seems to have been the effects of the Division of Labor. Ten men, working in unified concert, can craft thousands of iron pins in a single dusk, whereas a single man alone could scarcely forge but twenty."
+                  </p>
+                  <p>
+                    <strong>The Invisible Hand Hypothesis:</strong> "By pursuing own self-directed interest in the marketplace, the voyager is led by an invisible hand to promote an end which was no part of his original intention. By valuing freedom of commerce, society harvests robust wealth collectively."
+                  </p>
+                  <p>
+                    <strong>A Moral Cautionary Note:</strong> "Yet, let us not forget that commerce without virtue fosters stagnation of character. No society can surely be flourishing and happy, of which the far greater part of the members are poor and miserable. Wealth is but a measure of active utility and mutual trust."
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>
+                    <strong>Socrates' Soliloquy (Recorded by Plato):</strong> "Behold there are men living in an underground cave. They have legs and necks chained so they can only gaze forward. Behind them runs a crackling fire, throwing shadows of puppets against the wall. To those voyagers, shadows are the absolute truth."
+                  </p>
+                  <p>
+                    <strong>On Ideal Forms & Geometry:</strong> "The mathematical circle we draw onto sands is imperfect, a mere rough imitation. The true Ideal Circle exists purely in the divine intellect of Forms. To find truth, we must turn the whole soul away from shadows, scaling the rugged peaks of reason into blinding daylight."
+                  </p>
+                  <p>
+                    <strong>Role of the Voyager:</strong> "The philosopher who ascends and beholds the sun must crawl back down into the chained darkness to awaken peers, even if they mock and stone him. To explore is not to collect trinkets, but to liberate the captive mind."
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div className="border-t border-[#5c3317]/20 pt-2.5 mt-3 flex justify-between items-center text-[10px] font-mono text-[#5c3317]/80">
+              <span className="flex items-center space-x-1">
+                <BookOpen className="w-3 h-3 animate-pulse" />
+                <span>Scholar Mastery Logs Unlocked</span>
+              </span>
+              <button
+                onClick={() => setActiveDiary(null)}
+                className="bg-[#5c3317] text-[#fdf6e2] hover:bg-[#43240f] px-3.5 py-1.5 rounded text-[10px] font-bold tracking-wider cursor-pointer"
+              >
+                DISMISS SCRIP
+              </button>
+            </div>
           </div>
         </div>
       )}

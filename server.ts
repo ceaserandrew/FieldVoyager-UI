@@ -33,50 +33,118 @@ async function startServer() {
     console.log("GEMINI_API_KEY is not set or is a placeholder. Defaulting to high-quality fallback questions.");
   }
 
-  // Predefined Socratic Nodes data and fallback questions
-  const fallbacks: Record<string, { discipline: string; landmark: string; question: string; context: string }> = {
+  // Predefined Socratic Nodes data, questions, and progressive counter-arguments (Step-by-step)
+  interface OfflineDialogue {
+    discipline: string;
+    landmark: string;
+    question: string;
+    context: string;
+    steps: string[];
+  }
+
+  const offlineDialogues: Record<string, OfflineDialogue> = {
     "paradox-gate": {
       discipline: "Logic & Math",
       landmark: "The Gate of Paradox",
       question: "If a liar says 'I am lying', are they telling the truth? How can a statement be neither true nor false?",
-      context: "The Liar Paradox and the foundations of formal logic."
+      context: "The Liar Paradox and the foundations of formal logic.",
+      steps: [
+        "Fascinating. If the liar is indeed telling the truth, then they must be lying, which makes their statement false. But if it is false, then they are not lying, which makes it true! You see how we spin in a wheel? Does this indicate that certain self-referential statements must transcend our standard 'true/false' binary logic?",
+        "Indeed! If logic must be extended with a third state, or if some statements are simply invalid, we face profound questions about the limits of language. You have grasped the essence of self-referential crisis. Tell me, can we ever build a perfect logical system free of such traps?",
+        "Excellent reasoning, traveler. You have wrestled with the edges of formal truth and emerged with a deeper awareness. The Gate of Paradox opens wide for you!"
+      ]
     },
     "infinitude": {
       discipline: "Logic & Math",
       landmark: "The Infinitude Monolith",
       question: "How can one infinity be larger than another? If we have an infinite number of apples and an infinite number of odd numbers, are they the same size?",
-      context: "Cantor's Set Theory and the concept of transfinite numbers."
+      context: "Cantor's Set Theory and the concept of transfinite numbers.",
+      steps: [
+        "A thoughtful gaze! Notice that we can pair every odd number (1, 3, 5, ...) perfectly with every counting number (1, 2, 3, ...), showing they have the exact same cardinality. And yet, if we try to pair counting numbers with real decimal numbers, we find Cantor's 'diagonal' proof revealing a larger, uncountably infinite realm. How does it make you feel to realize that infinity is not a single destination, but an endless ladder?",
+        "Marvelous. Your intuition begins to see the landscape of Cantor's Paradise. When we accept that there are different magnitudes of infinity, do we realize that our finite minds can still map the transfinite? What does this say about the human capacity to touch the unlimited?",
+        "Superb. Your intellect has ascended the ladder of transfinite sets. The Monolith shines brightly, signaling your mastery over the infinite!"
+      ]
     },
     "invisible-hand": {
       discipline: "Economics",
       landmark: "The Invisible Hand Bazaar",
       question: "If everyone acts purely out of self-interest in a free market, how can society as a whole benefit? Can self-interest ever destroy the market itself?",
-      context: "Adam Smith's Invisible Hand theory and negative externalities."
+      context: "Adam Smith's Invisible Hand theory and negative externalities.",
+      steps: [
+        "An elegant starting premise. By wishing to maximize our own survival and prosperity, we create goods and services that others need, guided as if by an 'invisible hand'. But consider: if a factory owner dumps toxic waste in the shared river because it reduces their costs and serves their self-interest, the community suffers. How do we balance private pursuit with the tragedy of the commons?",
+        "Precisely. The market cannot exist in a vacuum; without shared virtues, trust, and common rules, self-interest devolves into plunder. Thus, our self-interest must be bound by empathy and moral sentiments. Do you agree that the 'invisible hand' is only as good as the visible hearts of its players?",
+        "Outstanding. Your synthesis of market dynamics and civic virtue is excellent. The golden scale of the Bazaar balances in your honor!"
+      ]
     },
     "game-arena": {
       discipline: "Economics",
       landmark: "The Game Theory Arena",
       question: "In a scenario where cooperating guarantees a good outcome, but betraying guarantees the best outcome for yourself, why do we default to betrayal? How do we build trust?",
-      context: "The Prisoner's Dilemma and Nash Equilibrium."
+      context: "The Prisoner's Dilemma and Nash Equilibrium.",
+      steps: [
+        "Ah, the Prisoner's Dilemma! If we both stay silent, we get a minor sentence. But if I betray you, I go free while you suffer. Since neither of us can be sure of the other, our rational self-interest drives us to both betray, leading to a worse outcome for everyone! If one-off interactions doom us to distrust, how does repeating this 'game' over generations change our strategy?",
+        "Magnificent! Iteration changes everything. When the game is repeated, 'Tit-for-Tat'—cooperating first, then copying the other's previous move—fosters trust and punishes betrayal. Trust is built not by blind hope, but by the continuous reciprocity of our choices. How does this apply to our journey across these islands?",
+        "Beautifully summarized. You have solved the equilibrium of strategic trust. The Arena cells collapse, and the master path is unlocked!"
+      ]
     },
     "cave-shadows": {
       discipline: "Philosophy",
       landmark: "The Cave of Shadows",
       question: "If you lived your whole life watching reflections on a wall, and then saw the real objects, would you believe they are real? How do we know our own world isn't a reflection of something greater?",
-      context: "Plato's Allegory of the Cave and epistemology."
+      context: "Plato's Allegory of the Cave and epistemology.",
+      steps: [
+        "Ah, you feel the darkness of the cave. When a captive is dragged up into the bright sunlight, the glare blinds them, and they desperately wish to return to the familiar shadows. Do we cling to our comfortable biases and illusions because the blinding light of truth is too painful to bear at first?",
+        "Insightful. The task of the explorer is not just to see the sun, but to cultivate the courage to withstand the glare and understand the source of light. If we realize our world index is filled with shadows of sensory perceptions, how does philosophy serve as the training of the soul to see the ideal forms?",
+        "Brilliant. You have exited the cave and gazed upon the midday sun of wisdom. The shadows hold no more dominion over your mind!"
+      ]
     },
     "golden-mean": {
       discipline: "Philosophy",
       landmark: "The Golden Mean Lyceum",
       question: "Is courage always a virtue? What happens if someone is too courageous, to the point of foolishness? Where is the line between virtue and vice?",
-      context: "Aristotle's Virtue Ethics and Nicomachean Ethics."
+      context: "Aristotle's Virtue Ethics and Nicomachean Ethics.",
+      steps: [
+        "Bravo! Aristotelian wisdom tells us that virtue is always a golden mean situated between two dangerous extremes. Deficient courage is cowardice, while excessive courage is rash recklessness. Thus, virtue is supreme balance. How does one dynamically determine this balance point in a chaotic, changing world?",
+        "Yes! We need practical wisdom (Phronesis)—trained through habit, reflection, and experience. Balancing our impulses is a continuous art, much like navigating a vessel across shifting seas. Tell me, how does this search for balance shape your own quest for mastery?",
+        "Exquisite. You have walked the tightrope of the Lyceum and found the perfect equilibrium of spirit. The Golden Mean welcomes you as an integrated philosopher!"
+      ]
+    }
+  };
+
+  const getOfflineDialogueResponse = (nodeId: string, history: any[]) => {
+    const dialog = offlineDialogues[nodeId];
+    if (!dialog) {
+      return {
+        feedback: "A profound formulation! Proceed with Socratic balance.",
+        isMastered: true
+      };
+    }
+    
+    // Count how many messages in history were sent by the user
+    const userMsgCount = history.filter((h: any) => h.sender === "user").length;
+    
+    if (userMsgCount === 0) {
+      return {
+        feedback: dialog.steps[0],
+        isMastered: false
+      };
+    } else if (userMsgCount === 1) {
+      return {
+        feedback: dialog.steps[1],
+        isMastered: false
+      };
+    } else {
+      return {
+        feedback: dialog.steps[2],
+        isMastered: true
+      };
     }
   };
 
   // API endpoint to generate / fetch the initial question
   app.post("/api/socratic/question", async (req, res) => {
     const { nodeId } = req.body;
-    const info = fallbacks[nodeId];
+    const info = offlineDialogues[nodeId];
     if (!info) {
       return res.status(404).json({ error: "Node not found" });
     }
@@ -109,7 +177,8 @@ async function startServer() {
         mode: "online"
       });
     } catch (err: any) {
-      console.error("Gemini query failed, falling back:", err);
+      // Capture 429 and others gracefully under a clean warning flag
+      console.warn(`[Gemini API Warning] Quota exceeded or network issue. Utilizing high-quality Socratic fallback.`);
       res.json({
         question: info.question,
         context: info.context,
@@ -123,17 +192,16 @@ async function startServer() {
   // API endpoint to respond to Socratic answer
   app.post("/api/socratic/respond", async (req, res) => {
     const { nodeId, question, userAnswer, history = [] } = req.body;
-    const info = fallbacks[nodeId];
+    const info = offlineDialogues[nodeId];
     if (!info) {
       return res.status(404).json({ error: "Node not found" });
     }
 
     if (!ai) {
-      // Simple offline heuristic response
-      const isSimpleMastered = userAnswer.trim().length > 10;
+      const fallbackResult = getOfflineDialogueResponse(nodeId, history);
       return res.json({
-        feedback: `I hear your thoughts about this riddle. "${userAnswer}" is a thoughtful reflection. Let us consider: if this is true, what are its implications? You have demonstrated earnest consideration!`,
-        isMastered: isSimpleMastered,
+        feedback: fallbackResult.feedback,
+        isMastered: fallbackResult.isMastered,
         mode: "offline"
       });
     }
@@ -181,11 +249,11 @@ async function startServer() {
         mode: "online"
       });
     } catch (err) {
-      console.error("Gemini evaluation error, falling back:", err);
-      const isSimpleMastered = userAnswer.trim().length > 10;
+      console.warn(`[Gemini API Warning] Quota exceeded or network issue during response. Running progressive offline fallback.`);
+      const fallbackResult = getOfflineDialogueResponse(nodeId, history);
       res.json({
-        feedback: `Your formulation is intriguing: "${userAnswer}". Tell me, if we follow this premise, does it meet all objections? I declare your exploration mastered!`,
-        isMastered: isSimpleMastered,
+        feedback: fallbackResult.feedback,
+        isMastered: fallbackResult.isMastered,
         mode: "offline"
       });
     }
