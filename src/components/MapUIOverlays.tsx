@@ -1,6 +1,6 @@
 import React from "react";
 import { LandmarkNode, Position } from "../types";
-import { Compass, ZoomIn, ZoomOut, Maximize, BookOpen } from "lucide-react";
+import { Compass, ZoomIn, ZoomOut, Maximize, BookOpen, Camera, Smartphone } from "lucide-react";
 
 interface MapUIOverlaysProps {
   avatarPos: Position;
@@ -19,6 +19,8 @@ interface MapUIOverlaysProps {
   dimensions: { width: number; height: number };
   activeDiary: "turing" | "smith" | "plato" | null;
   setActiveDiary: (d: "turing" | "smith" | "plato" | null) => void;
+  onTakePhoto: (time: "Morning" | "Noon" | "Sunset" | "Night", weather: "Sunny" | "Rain" | "Snow" | "Storm" | "Sakura") => void;
+  setIsPhoneOpen: (open: boolean) => void;
 }
 
 export const MapUIOverlays: React.FC<MapUIOverlaysProps> = ({
@@ -38,6 +40,8 @@ export const MapUIOverlays: React.FC<MapUIOverlaysProps> = ({
   dimensions,
   activeDiary,
   setActiveDiary,
+  onTakePhoto,
+  setIsPhoneOpen,
 }) => {
   return (
     <>
@@ -111,6 +115,26 @@ export const MapUIOverlays: React.FC<MapUIOverlaysProps> = ({
             );
           })}
         </div>
+      </div>
+
+      {/* 2.6 Floating Pocket Phone and Camera HUD Controllers */}
+      <div className="absolute top-14 right-3 flex flex-col space-y-2 z-15 font-mono">
+        <button
+          onClick={() => onTakePhoto(timeOfDay, selectedWeather)}
+          className="w-10 h-10 bg-[#fdf6e2] hover:bg-pink-100 border-2 border-[#7c2d12] text-[#7c2d12] rounded-full flex items-center justify-center shadow-lg cursor-pointer transition-all hover:scale-110 active:scale-95"
+          title="Take scenic snapshot (双击化身亦可)"
+        >
+          <Camera className="w-5 h-5 text-pink-600 animate-pulse" />
+        </button>
+
+        <button
+          onClick={() => setIsPhoneOpen(true)}
+          className="w-10 h-12 bg-[#7c2d12] hover:bg-[#9a3412] text-amber-100 border-2 border-[#5e1e07] rounded-b-xl flex flex-col items-center justify-center shadow-lg cursor-pointer transition-all hover:translate-y-1 active:scale-95"
+          title="Open Pocket Phone (↑ / 滑动拉出)"
+        >
+          <Smartphone className="w-4.5 h-4.5 animate-bounce" style={{ animationDuration: '3s' }} />
+          <span className="text-[7.5px] font-black tracking-widest uppercase mt-0.5">↑</span>
+        </button>
       </div>
 
       {/* 3. Infinite Zoom Slider Widget */}

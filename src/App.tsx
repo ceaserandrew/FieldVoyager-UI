@@ -5,18 +5,19 @@ import { MapCanvas } from "./components/MapCanvas";
 import { DialoguePanel } from "./components/DialoguePanel";
 import { StatsOverlays } from "./components/StatsOverlays";
 import { motion, AnimatePresence } from "motion/react";
-import { Flame, Compass, Star, HelpCircle, Book, Award, Check } from "lucide-react";
-import { AvatarConfig, DEFAULT_AVATAR_CONFIG } from "./utils/avatarDrawer";
+import { Flame, Compass, Star, HelpCircle, Book, Award, Check, Camera, Sparkles } from "lucide-react";
+import { AvatarConfig, DEFAULT_AVATAR_CONFIG, drawCompositedAvatar } from "./utils/avatarDrawer";
 import { AvatarCustomizer } from "./components/AvatarCustomizer";
+import { PocketPhone, Photo, PhoneSettings } from "./components/PocketPhone";
 
 const SCHOLAR_COTTAGES: ScholarCottage[] = [
   { 
     id: "turing-cottage", 
     x: 450, 
     y: 690, 
-    name: "Alan Turing's Cyber Cabin", 
+    name: "Alan Turing's Autumn Orchard Studio", 
     scholar: "Alan Turing", 
-    text: "Welcome, traveler. Out here in the western plains of Logic, we compile reality from binary truths. Seek the Gate of Computation, and remember that any logical machine is bounded by what it can decide." 
+    text: "Welcome, traveler. Out here in the golden autumn orchards of Logic, we harvest truth from binary roots. Seek the Gate of Paradox, and remember that any logical garden is bounded by what can be cultivated." 
   },
   { 
     id: "smith-cottage", 
@@ -62,6 +63,24 @@ export default function App() {
   const [levelUpMessage, setLevelUpMessage] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(true);
   const [showMeditationAlert, setShowMeditationAlert] = useState(false);
+
+  // --- POCKET PHONE SYSTEM STATES ---
+  const [isPhoneOpen, setIsPhoneOpen] = useState<boolean>(false);
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [featuredPhotoId, setFeaturedPhotoId] = useState<string | null>(null);
+  const [phoneSettings, setPhoneSettings] = useState<PhoneSettings>({
+    sfx: true,
+    lang: "CN",
+    aionTone: "cozy",
+    energyMode: "percent",
+    vibrate: true,
+  });
+
+  // Photo-capturing workflow states
+  const [isTakingPhoto, setIsTakingPhoto] = useState<boolean>(false);
+  const [photoCaption, setPhotoCaption] = useState<string>("");
+  const [capturedPhotoData, setCapturedPhotoData] = useState<string | null>(null);
+  const [photoFlashActive, setPhotoFlashActive] = useState<boolean>(false);
 
   // Scholars & Chests Exploration States
   const [activeCottage, setActiveCottage] = useState<ScholarCottage | null>(null);
@@ -121,7 +140,62 @@ export default function App() {
         console.error(e);
       }
     }
+
+    const savedPhotos = localStorage.getItem("fv_gallery_photos");
+    if (savedPhotos) {
+      try {
+        setPhotos(JSON.parse(savedPhotos));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    const savedFeatured = localStorage.getItem("fv_featured_photo_id");
+    if (savedFeatured) {
+      setFeaturedPhotoId(savedFeatured);
+    }
+
+    const savedSettings = localStorage.getItem("fv_phone_settings");
+    if (savedSettings) {
+      try {
+        setPhoneSettings(JSON.parse(savedSettings));
+      } catch (e) {
+        console.error(e);
+      }
+    }
   }, []);
+
+  // Sync phone-related states to localStorage
+  useEffect(() => {
+    localStorage.setItem("fv_gallery_photos", JSON.stringify(photos));
+  }, [photos]);
+
+  useEffect(() => {
+    if (featuredPhotoId) {
+      localStorage.setItem("fv_featured_photo_id", featuredPhotoId);
+    } else {
+      localStorage.removeItem("fv_featured_photo_id");
+    }
+  }, [featuredPhotoId]);
+
+  useEffect(() => {
+    localStorage.setItem("fv_phone_settings", JSON.stringify(phoneSettings));
+  }, [phoneSettings]);
+
+  // Listen for global keyboard ArrowUp event to toggle Pocket Phone
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // If we are in interactive modals or dialogs, do not trigger phone
+      if (activeDialogueNode || showCustomizer || activeCottage || isTakingPhoto) return;
+      
+      if (e.key === "ArrowUp" || e.code === "ArrowUp") {
+        // Toggle phone open
+        setIsPhoneOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [activeDialogueNode, showCustomizer, activeCottage, isTakingPhoto]);
 
   // Save changes to local storage
   const saveGameState = (solvedIds: string[], currentStats: PlayerStats) => {
@@ -214,6 +288,231 @@ export default function App() {
       saveGameState(solvedNodeIds, nextStats);
       return nextStats;
     });
+  };
+
+  // Retro Sound generator for snap and success triggers
+  const playRetroSound = (type: "snap" | "success") => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      
+      if (type === "snap") {
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.05);
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+      } else {
+        // success chime
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+        osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1); // E5
+        osc.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.2); // G5
+        gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+      }
+      
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + (type === "snap" ? 0.15 : 0.4));
+    } catch (e) {
+      // Audio context error fallback
+    }
+  };
+
+  // Generate a procedural retro pixel-style scenic snapshot postcard
+  const generateScenicSnapshot = (
+    time: "Morning" | "Noon" | "Sunset" | "Night",
+    weather: "Sunny" | "Rain" | "Snow" | "Storm" | "Sakura"
+  ): string => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 400;
+    canvas.height = 240;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return "";
+
+    // Disable image smoothing for beautiful retro pixelated crisp look
+    ctx.imageSmoothingEnabled = false;
+
+    // 1. Draw beautiful atmospheric background gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, 240);
+    if (time === "Morning") {
+      grad.addColorStop(0, "#ffe4e6"); // soft pinkish rose sunrise
+      grad.addColorStop(1, "#bae6fd"); // light sky blue
+    } else if (time === "Sunset") {
+      grad.addColorStop(0, "#fb923c"); // glowing deep orange
+      grad.addColorStop(1, "#5b21b6"); // warm royal purple
+    } else if (time === "Night") {
+      grad.addColorStop(0, "#090d16"); // cosmic obsidian
+      grad.addColorStop(1, "#1e1b4b"); // deep indigo sky
+    } else {
+      // Noon
+      grad.addColorStop(0, "#38bdf8"); // crisp azure sky
+      grad.addColorStop(1, "#0369a1"); // deep sea sky blue
+    }
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 400, 240);
+
+    // 2. Draw procedural celestial spheres
+    if (time === "Night") {
+      // Luminous silver moon
+      ctx.fillStyle = "#f1f5f9";
+      ctx.shadowColor = "#38bdf8";
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(310, 50, 16, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0; // reset shadow
+
+      // Star constellations
+      ctx.fillStyle = "#ffffff";
+      for (let i = 0; i < 24; i++) {
+        const starX = (i * 97 + 13) % 400;
+        const starY = (i * 37 + 19) % 110;
+        ctx.fillRect(starX, starY, (i % 3 === 0) ? 2 : 1, (i % 3 === 0) ? 2 : 1);
+      }
+    } else {
+      // Bright sun or warm setting sun disk
+      ctx.fillStyle = time === "Sunset" ? "#ea580c" : "#fef08a";
+      ctx.shadowColor = time === "Sunset" ? "#ef4444" : "#facc15";
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(310, 60, time === "Sunset" ? 22 : 18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0; // reset
+    }
+
+    // 3. Draw gorgeous scenic overworld layered mountains/hills
+    // Deep back hills
+    ctx.fillStyle = time === "Night" ? "#064e3b" : time === "Sunset" ? "#14532d" : "#166534";
+    ctx.beginPath();
+    ctx.ellipse(140, 260, 240, 90, 0, 0, Math.PI * 2);
+    ctx.ellipse(340, 270, 200, 100, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Medium-depth sweet autumn hills
+    ctx.fillStyle = time === "Night" ? "#022c22" : time === "Sunset" ? "#854d0e" : "#15803d"; // Golden orchard hills for autumn/sunset, lush green for noon
+    ctx.beginPath();
+    ctx.ellipse(60, 275, 180, 85, 0, 0, Math.PI * 2);
+    ctx.ellipse(260, 280, 220, 95, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. Draw weather atmospheric details
+    if (weather === "Rain" || weather === "Storm") {
+      ctx.strokeStyle = "rgba(186, 230, 253, 0.45)";
+      ctx.lineWidth = 1.2;
+      for (let i = 0; i < 35; i++) {
+        const rx = (i * 137) % 400;
+        const ry = (i * 89) % 240;
+        ctx.beginPath();
+        ctx.moveTo(rx, ry);
+        ctx.lineTo(rx - 4, ry + 12);
+        ctx.stroke();
+      }
+    } else if (weather === "Snow") {
+      ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+      for (let i = 0; i < 40; i++) {
+        const sx = (i * 127) % 400;
+        const sy = (i * 73) % 240;
+        ctx.beginPath();
+        ctx.arc(sx, sy, (i % 4 === 0) ? 2.5 : 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (weather === "Sakura") {
+      ctx.fillStyle = "rgba(251, 113, 133, 0.8)"; // sweet cherry blossom petals
+      for (let i = 0; i < 28; i++) {
+        const sx = (i * 149) % 400;
+        const sy = (i * 83) % 240;
+        ctx.beginPath();
+        ctx.ellipse(sx, sy, 3, 1.5, Math.PI / 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // 5. Draw the player's custom avatar sprite right in the center!
+    drawCompositedAvatar(ctx, 200, 168, avatarConfig, "down", 0, false);
+
+    // 6. Draw elegant retro borders
+    ctx.strokeStyle = "#fef3c7"; // Warm cream frame
+    ctx.lineWidth = 6;
+    ctx.strokeRect(3, 3, 394, 234);
+
+    ctx.strokeStyle = "#7c2d12"; // Inner terracotta board border
+    ctx.lineWidth = 2;
+    ctx.strokeRect(8, 8, 384, 224);
+
+    // 7. Stamping vintage exploration grid information
+    ctx.fillStyle = "rgba(254, 243, 199, 0.9)";
+    ctx.fillRect(16, 16, 215, 24);
+    ctx.strokeStyle = "#7c2d12";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(16, 16, 215, 24);
+
+    ctx.fillStyle = "#7c2d12";
+    ctx.font = "bold 7px monospace";
+    ctx.fillText(`FIELDVOYAGER STAMP // GRID (${Math.round(avatarPos.x)}, ${Math.round(avatarPos.y)})`, 22, 26);
+    ctx.fillText(`ATMOSPHERE: ${time.toUpperCase()} / ${weather.toUpperCase()}`, 22, 34);
+
+    return canvas.toDataURL("image/png");
+  };
+
+  const handleTakePhoto = (
+    time: "Morning" | "Noon" | "Sunset" | "Night",
+    weather: "Sunny" | "Rain" | "Snow" | "Storm" | "Sakura"
+  ) => {
+    // 1. Play vintage shutter click
+    playRetroSound("snap");
+
+    // 2. Trigger instant full screen white screen flash animation
+    setPhotoFlashActive(true);
+    setTimeout(() => {
+      setPhotoFlashActive(false);
+    }, 250);
+
+    // 3. Render procedural postcard snapshot
+    const dataUrl = generateScenicSnapshot(time, weather);
+    setCapturedPhotoData(dataUrl);
+    setPhotoCaption("");
+    setIsTakingPhoto(true);
+  };
+
+  const handleSavePhoto = () => {
+    if (!capturedPhotoData) return;
+
+    // Build the photo object
+    const newPhoto: Photo = {
+      id: "photo-" + Date.now(),
+      url: capturedPhotoData,
+      x: avatarPos.x,
+      y: avatarPos.y,
+      timestamp: new Date().toLocaleDateString("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      }),
+      caption: photoCaption.trim() || "在旷野里的短暂停留。"
+    };
+
+    // Update state and persistence
+    setPhotos((prev) => {
+      const updated = [newPhoto, ...prev];
+      localStorage.setItem("fv_gallery_photos", JSON.stringify(updated));
+      return updated;
+    });
+
+    // Award cozy explorer points (Mastery XP!)
+    handleAwardXp(15);
+
+    // Play successful saving sound
+    playRetroSound("success");
+
+    // Clear and close
+    setIsTakingPhoto(false);
+    setCapturedPhotoData(null);
+    setPhotoCaption("");
   };
 
   // Rest & Meditate to restore mental flame
@@ -364,6 +663,9 @@ export default function App() {
             onNearCottage={handleOpenCottageDialogue}
             activeCottageId={activeCottage?.id || null}
             onOpenChest={handleOpenChest}
+            onTakePhoto={handleTakePhoto}
+            setIsPhoneOpen={setIsPhoneOpen}
+            isPhoneOpen={isPhoneOpen}
           />
 
           {/* Dialogue card overlay (slides up nicely) */}
@@ -650,6 +952,106 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+
+      {/* Instant Camera Shutter Flash Overlay */}
+      <AnimatePresence>
+        {photoFlashActive && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="fixed inset-0 bg-white z-[9999] pointer-events-none"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* 📸 Scenic Postcard Captioning Modal */}
+      <AnimatePresence>
+        {isTakingPhoto && capturedPhotoData && (
+          <div className="fixed inset-0 bg-[#0c111d]/85 backdrop-blur-md flex items-center justify-center p-4 z-50 font-mono text-amber-950">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-[#faf1da] border-4 border-[#7c2d12] max-w-md w-full rounded-2xl overflow-hidden shadow-2xl flex flex-col p-5"
+            >
+              <div className="flex items-center space-x-2.5 text-[#7c2d12] mb-3 border-b-2 border-[#7c2d12]/15 pb-2.5">
+                <Camera className="w-5 h-5 text-pink-600 animate-pulse" />
+                <h3 className="text-sm font-black uppercase tracking-wider">Scenic Snapshot Captured</h3>
+              </div>
+
+              {/* Postcard Preview Frame */}
+              <div className="border-4 border-[#7c2d12] bg-[#0c1320] rounded-xl overflow-hidden shadow-lg mb-4.5 aspect-[5/3] w-full select-none relative">
+                <img
+                  src={capturedPhotoData}
+                  alt="Scenic Postcard Preview"
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="absolute bottom-2.5 right-2.5 bg-[#7c2d12] text-amber-100 text-[8px] font-bold px-1.5 py-0.5 rounded border border-[#fef3c7]/20 uppercase">
+                  Snap OK
+                </div>
+              </div>
+
+              {/* Caption write up input field */}
+              <div className="space-y-1.5 mb-4">
+                <label className="text-[10px] text-[#7c2d12]/80 uppercase font-black tracking-wider block">
+                  ✍️ Write a memoir caption for this place:
+                </label>
+                <input
+                  type="text"
+                  value={photoCaption}
+                  onChange={(e) => setPhotoCaption(e.target.value.slice(0, 45))}
+                  placeholder="Write down your thoughts... (e.g. 漫步在金黄的悖论之门旁。)"
+                  className="w-full bg-[#fdf6e2] border-2 border-[#7c2d12] text-xs font-semibold px-3 py-2 rounded-lg text-[#3c2f2f] placeholder-[#3c2f2f]/35 focus:outline-hidden focus:ring-2 focus:ring-pink-400"
+                />
+                <span className="text-[8.5px] text-[#713f12]/60 font-bold block text-right animate-pulse">
+                  {photoCaption.length} / 45 characters
+                </span>
+              </div>
+
+              {/* Action button triggers */}
+              <div className="flex items-center space-x-2 border-t border-[#7c2d12]/10 pt-3">
+                <button
+                  onClick={handleSavePhoto}
+                  className="flex-1 bg-emerald-750 hover:bg-emerald-650 active:bg-emerald-950 text-white font-black text-xs py-2.5 rounded-lg border-2 border-emerald-950 shadow-md cursor-pointer transition-transform hover:scale-102 flex items-center justify-center space-x-1.5 bg-emerald-800"
+                >
+                  <Sparkles className="w-4 h-4 text-yellow-300" />
+                  <span>Save to Photo Album (+15 XP)</span>
+                </button>
+                
+                <button
+                  onClick={() => {
+                    setIsTakingPhoto(false);
+                    setCapturedPhotoData(null);
+                  }}
+                  className="bg-[#fdf6e2] hover:bg-amber-100 text-[#7c2d12] font-black text-xs px-4 py-2.5 rounded-lg border-2 border-amber-900/60 cursor-pointer shadow-sm transition-colors"
+                >
+                  Discard
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 📱 Socratic Pocket Phone 万能接口 (Slides in from the right edge like a physical pocket pull-out) */}
+      <PocketPhone
+        isOpen={isPhoneOpen}
+        onClose={() => setIsPhoneOpen(false)}
+        avatarPos={avatarPos}
+        stats={stats}
+        solvedNodeIds={solvedNodeIds}
+        onTeleport={handleTeleport}
+        reduceEnergy={handleReduceEnergy}
+        photos={photos}
+        setPhotos={setPhotos}
+        featuredPhotoId={featuredPhotoId}
+        setFeaturedPhotoId={setFeaturedPhotoId}
+        phoneSettings={phoneSettings}
+        setPhoneSettings={setPhoneSettings}
+      />
 
       {/* 4. Humbler Footer credits - Shelved Wooden Plate */}
       <footer className="bg-[#7c2d12] border-t-4 border-[#5e1e07] py-4 text-center text-[10.5px] text-amber-100 font-mono font-bold">

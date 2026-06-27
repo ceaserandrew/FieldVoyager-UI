@@ -28,6 +28,9 @@ interface MapCanvasProps {
   onNearCottage: (cottage: ScholarCottage | null) => void;
   activeCottageId: string | null;
   onOpenChest: (chestId: string) => void;
+  onTakePhoto: (time: "Morning" | "Noon" | "Sunset" | "Night", weather: "Sunny" | "Rain" | "Snow" | "Storm" | "Sakura") => void;
+  setIsPhoneOpen: (open: boolean) => void;
+  isPhoneOpen?: boolean;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -45,6 +48,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onNearCottage,
   activeCottageId,
   onOpenChest,
+  onTakePhoto,
+  setIsPhoneOpen,
+  isPhoneOpen = false,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -393,6 +399,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
   };
 
+  const handleDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isDialogueOpen) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+
+    const clickedLogical = screenToWorld(mouseX, mouseY);
+    const distToAvatar = Math.hypot(clickedLogical.x - avatarPos.x, clickedLogical.y - avatarPos.y);
+
+    // If double-clicked within 64 pixels of the avatar, capture snapshot
+    if (distToAvatar < 64) {
+      onTakePhoto(timeOfDay, selectedWeather);
+    }
+  };
+
   const triggerCharacterWalk = (event: React.MouseEvent<HTMLCanvasElement>) => {
     if (isDialogueOpen) return;
 
@@ -457,7 +481,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     };
 
     const updateGame = () => {
-      if (isDialogueOpen) {
+      if (isDialogueOpen || isPhoneOpen) {
         isWalkingRef.current = false;
         keysPressedRef.current = {};
         draw();
@@ -802,6 +826,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const startRow = Math.max(0, camRow - viewRadius);
       const endRow = Math.min(79, camRow + viewRadius);
 
+      const assets = getMetaAssets();
+
       // Render the entire 3D tile overworld grid sorted row-by-row & col-by-col for depth ordering!
       for (let r = startRow; r <= endRow; r++) {
         for (let c = startCol; c <= endCol; c++) {
@@ -850,52 +876,87 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           }
 
           // Distinct materials color mapping
-          let topColor = "#0f172a";
-          let sideColor = "#020617";
+          let topColor = "#3d8c40";
+          let sideColor = "#255c27";
           switch (type) {
             case "deep_water":
-              topColor = "#0f172a";
-              sideColor = "#020617";
+              topColor = "#0c2040";
+              sideColor = "#061226";
               break;
             case "river_water":
-              topColor = "#0ea5e9"; // beautiful pristine blue river
-              sideColor = "#0284c7";
+              topColor = "#226496";
+              sideColor = "#133f61";
               break;
             case "sand":
-              topColor = "#fef08a"; // sunny soft beach sands
-              sideColor = "#eab308";
+              topColor = "#f6ebd0";
+              sideColor = "#dfcfab";
               break;
             case "cyber_grass":
-              topColor = "#4c1d95"; // cyber glow purple grass fields
-              sideColor = "#2e1065";
+              topColor = "#c27a30"; // Beautiful Stardew autumn maple woods floor
+              sideColor = "#854f19";
               break;
             case "agrarian_grass":
-              topColor = "#065f46"; // lush green pastures
-              sideColor = "#064e3b";
+              topColor = "#3d8c40"; // Pristine spring-meadow green pastures
+              sideColor = "#255c27";
               break;
             case "slate_stone":
-              topColor = "#334155";
-              sideColor = "#1e293b";
+              topColor = "#4a5568";
+              sideColor = "#2d3748";
               break;
             case "bridge":
-              topColor = "#78350f"; // beautiful handmilled rustic bridge logs
-              sideColor = "#451a03";
+              topColor = "#723b1f"; // Warm mahogany bridge logs
+              sideColor = "#4a2411";
               break;
           }
 
-          // Draw ground top plane (diamond)
-          ctx.fillStyle = topColor;
+          // Draw ground top plane (diamond) using high-grade textured tile variants
+          const variants = assets.tiles[type];
+          const variantIdx = (c * 17 + r * 13) % (variants ? variants.length : 1);
+          const tileCanvas = variants ? variants[variantIdx] : null;
+
+          if (tileCanvas) {
+            const m11 = (pRight.x - pTop.x) / 32;
+            const m12 = (pRight.y - pTop.y) / 32;
+            const m21 = (pLeft.x - pTop.x) / 32;
+            const m22 = (pLeft.y - pTop.y) / 32;
+            const dx = pTop.x;
+            const dy = pTop.y;
+
+            ctx.save();
+            // Clip to diamond shape to prevent any edge bleeding
+            ctx.beginPath();
+            ctx.moveTo(pTop.x, pTop.y);
+            ctx.lineTo(pRight.x, pRight.y);
+            ctx.lineTo(pBottom.x, pBottom.y);
+            ctx.lineTo(pLeft.x, pLeft.y);
+            ctx.closePath();
+            ctx.clip();
+
+            // Transform & Draw the 2D tile canvas onto the 3D isometric plane!
+            ctx.transform(m11, m12, m21, m22, dx, dy);
+            ctx.drawImage(tileCanvas, 0, 0, 32, 32);
+            ctx.restore();
+          } else {
+            // Solid color fallback
+            ctx.fillStyle = topColor;
+            ctx.beginPath();
+            ctx.moveTo(pTop.x, pTop.y);
+            ctx.lineTo(pRight.x, pRight.y);
+            ctx.lineTo(pBottom.x, pBottom.y);
+            ctx.lineTo(pLeft.x, pLeft.y);
+            ctx.closePath();
+            ctx.fill();
+          }
+
+          // Subtle grid lines to establish depth rhythm
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.015)";
+          ctx.lineWidth = 0.5;
           ctx.beginPath();
           ctx.moveTo(pTop.x, pTop.y);
           ctx.lineTo(pRight.x, pRight.y);
           ctx.lineTo(pBottom.x, pBottom.y);
           ctx.lineTo(pLeft.x, pLeft.y);
           ctx.closePath();
-          ctx.fill();
-
-          // Subtle grid lines to establish depth rhythm
-          ctx.strokeStyle = "rgba(255, 255, 255, 0.02)";
-          ctx.lineWidth = 1;
           ctx.stroke();
 
           // Clip side vertical cliff-walls for 3D raised elevation!
@@ -1115,8 +1176,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       drawLogsBridge(getRiverX(1536), 1536);
 
       // 5. RICH LANDSCAPE DECORATIONS & TREES
-      const assets = getMetaAssets();
-
       const drawSwayingTree = (tx: number, ty: number, style: "oak" | "pine" | "cyber") => {
         if (!isVisible(tx, ty, 64)) return;
 
@@ -1230,7 +1289,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.scale(zoom, zoom);
 
         const colors = 
-          style === "cyber" ? ["#ec4899", "#a855f7", "#06b6d4"] :
+          style === "cyber" ? ["#ea580c", "#fbbf24", "#f43f5e"] : // Cozy Autumn Harvest colors
           style === "agrarian" ? ["#facc15", "#f43f5e", "#10b981"] :
           ["#3b82f6", "#60a5fa", "#ffffff"];
 
@@ -2267,6 +2326,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onDoubleClick={handleDoubleClick}
         onMouseLeave={() => { isDraggingRef.current = false; }}
         onWheel={handleWheel}
         className="w-full h-full block bg-slate-950 cursor-grab active:cursor-grabbing"
@@ -2289,6 +2349,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         dimensions={dimensions}
         activeDiary={activeDiary}
         setActiveDiary={setActiveDiary}
+        onTakePhoto={onTakePhoto}
+        setIsPhoneOpen={setIsPhoneOpen}
       />
     </div>
   );
